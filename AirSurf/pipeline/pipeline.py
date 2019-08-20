@@ -3,6 +3,7 @@ import numpy as np
 import cv2
 import math
 import csv
+from threading import Thread
 
 from keras.preprocessing.image import ImageDataGenerator, array_to_img, img_to_array, load_img
 from keras.models import Sequential
@@ -32,7 +33,7 @@ import pickle
 # print(os.getcwd())
 #%set_env KMP_DUPLICATE_LIB_OK=TRUE # TODO set environment variable from python
 
-class Pipeline(object):
+class Pipeline(Thread):
 
     instance = None
 
@@ -486,10 +487,13 @@ class Pipeline(object):
         return img
 
 
+    def setup(self, img_path, output_dir, hmap_path=None):
+        self.img_path = img_path
+        self.output_dir = output_dir
+        self.hmap_path = hmap_path
 
 
-
-    def run_pipeline(self, img_path, output_dir, hmap_path=None):
+    def run(self):
         # Save or load model
 
         #model.save("models/soil/model_5.h5")
@@ -499,12 +503,12 @@ class Pipeline(object):
 
         hmap = None
 
-        if hmap_path is not None:
-            hmap = cv2.imread(hmap_path)
+        if self.hmap_path is not None:
+            hmap = cv2.imread(self.hmap_path)
 
 
 
-        img = cv2.imread(img_path)
+        img = cv2.imread(self.img_path)
 
 
         if img.shape[2] > 3:
@@ -731,7 +735,7 @@ class Pipeline(object):
 
         hmap_plots = []
 
-        if hmap_path is not None:
+        if hmap is not None:
 
             hmap_mask = np.zeros((hmap_h, hmap_w))
             for plot in plot2:
