@@ -490,82 +490,6 @@ def print_coords_on_img(img,r,c,x,y,w,h):
 
 #lab_img = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
 
-test_plot = plot2[200]
-print(test_plot)
-(x,y,w,h,a) = test_plot
-test_plot_img = img[y:y+h,x:x+w]
-print(test_plot_img.shape)
-test_data = get_data(test_plot_img)
-
-csv_data = []
-coord_img = hmap.copy()
-print(coord_img.shape)
-for plot in plots_with_grids:
-    (r, c, x, y, w, h, a) = plot
-    (x, y, w, h, a) = convert_coords((x, y, w, h, a), img.shape[:2], hmap.shape[:2])  # Uncomment when using hmap
-    coord_img = print_coords_on_img(coord_img, r, c, x, y, w, h)
-
-    plot_img = hmap[y:y + h, x:x + w]
-    plot_img = remove_edge_effects(plot_img)
-    veg_i, aniso, cover, green, entro = get_data(plot_img)
-
-    # (r,c,x,y,w,h,a) = plot
-    # (x,y,w,h,a) = convert_coords((x,y,w,h,a),img.shape[:2],hmap.shape[:2])
-    # hplot = remove_edge_effects(hmap[y:y+h,x:x+w])
-    # height = get_height(hplot)
-
-    # For initial good img
-    # csv_data.append((r,c,veg_i, aniso, cover, green, entro, height))
-    # For image with grid overlaid
-    csv_data.append((r, c, veg_i, aniso, cover, green, entro))
-    # For heatmap with grid overlaid
-    # csv_data.append((r,c,height))
-
-print(len(csv_data))
-# cv2.imwrite("index.png",coord_img)
-# pickle_name = "180515rres.pickle"
-# pickle.dump(plot2,open(pickle_name,'wb'))
-
-
-plot0 = plots_with_grids[21]
-(r,c,x,y,w,h,a) = plot0
-(x,y,w,h,a) = convert_coords((x,y,w,h,a), img.shape[:2], hmap.shape[:2])
-hplot = remove_edge_effects(hmap[y:y+h,x:x+w])
-height = get_height(hplot)
-cv2.imwrite("test_plot.png",hmap[y:y+h,x:x+w])
-#print(height)
-#with open('test.csv','w') as csvfile:
-#    data_w = csv.writer(csvfile)
-#    for row in hplot:
-#        data_w.writerow(row)
-
-
-#dir_name = "dfw_18_07_23"
-dir_name = "dfw_18_07_09_h"
-with open(dir_name+".csv",'w') as csvfile:
-    data_w = csv.writer(csvfile)
-    # Row IDX - row
-    # Column IDX - column
-    # Veg Greenness IDX - vegetative index
-    # Canopy Orientation - Isotropy (high numbers indicates likely lodging)
-    # Canopy Structure - Shannon Entropy score
-    # Greenness Reading - Median value of green channel
-    # Relative height - after further work we can attempt to give an absolute value
-    data_w.writerow(['Row IDX','Column IDX','Veg. Greenness IDX','Canopy Orientation','Coverage','Greenness Reading','Canopy Structure','Relative Height'])
-    for row in csv_data:
-        string = []
-        for item in row:
-            if item is not None:
-                string.append("%.3f" % item if not float(item).is_integer() else item)
-            else:
-                string.append("N/A")
-        data_w.writerow(string)
-
-
-
-
-
-
 
 
 
@@ -956,6 +880,82 @@ def pipeline():
         plots_with_grids.append((grid_row, grid_col, plot[0], plot[1], plot[2], plot[3], plot[4]))
 
         grid_col += 1
+
+
+
+    test_plot = plot2[200]
+    print(test_plot)
+    (x,y,w,h,a) = test_plot
+    test_plot_img = img[y:y+h,x:x+w]
+    print(test_plot_img.shape)
+    test_data = get_data(test_plot_img)
+
+    csv_data = []
+    coord_img = hmap.copy()
+    print(coord_img.shape)
+    for plot in plots_with_grids:
+        (r, c, x, y, w, h, a) = plot
+        (x, y, w, h, a) = convert_coords((x, y, w, h, a), img.shape[:2], hmap.shape[:2])  # Uncomment when using hmap
+        coord_img = print_coords_on_img(coord_img, r, c, x, y, w, h)
+
+        plot_img = hmap[y:y + h, x:x + w]
+        plot_img = remove_edge_effects(plot_img)
+        veg_i, aniso, cover, green, entro = get_data(plot_img)
+
+    # (r,c,x,y,w,h,a) = plot
+    # (x,y,w,h,a) = convert_coords((x,y,w,h,a),img.shape[:2],hmap.shape[:2])
+    # hplot = remove_edge_effects(hmap[y:y+h,x:x+w])
+    # height = get_height(hplot)
+
+    # For initial good img
+    # csv_data.append((r,c,veg_i, aniso, cover, green, entro, height))
+    # For image with grid overlaid
+        csv_data.append((r, c, veg_i, aniso, cover, green, entro))
+    # For heatmap with grid overlaid
+    # csv_data.append((r,c,height))
+
+    print(len(csv_data))
+# cv2.imwrite("index.png",coord_img)
+# pickle_name = "180515rres.pickle"
+# pickle.dump(plot2,open(pickle_name,'wb'))
+
+
+    plot0 = plots_with_grids[21]
+    (r,c,x,y,w,h,a) = plot0
+    (x,y,w,h,a) = convert_coords((x,y,w,h,a), img.shape[:2], hmap.shape[:2])
+    hplot = remove_edge_effects(hmap[y:y+h,x:x+w])
+    height = get_height(hplot)
+    cv2.imwrite("test_plot.png",hmap[y:y+h,x:x+w])
+#print(height)
+#with open('test.csv','w') as csvfile:
+#    data_w = csv.writer(csvfile)
+#    for row in hplot:
+#        data_w.writerow(row)
+
+
+#dir_name = "dfw_18_07_23"
+    dir_name = "dfw_18_07_09_h"
+    with open(dir_name+".csv",'w') as csvfile:
+        data_w = csv.writer(csvfile)
+    # Row IDX - row
+    # Column IDX - column
+    # Veg Greenness IDX - vegetative index
+    # Canopy Orientation - Isotropy (high numbers indicates likely lodging)
+    # Canopy Structure - Shannon Entropy score
+    # Greenness Reading - Median value of green channel
+    # Relative height - after further work we can attempt to give an absolute value
+        data_w.writerow(['Row IDX','Column IDX','Veg. Greenness IDX','Canopy Orientation','Coverage','Greenness Reading','Canopy Structure','Relative Height'])
+        for row in csv_data:
+            string = []
+            for item in row:
+                if item is not None:
+                    string.append("%.3f" % item if not float(item).is_integer() else item)
+                else:
+                    string.append("N/A")
+            data_w.writerow(string)
+
+
+
 
 
 
