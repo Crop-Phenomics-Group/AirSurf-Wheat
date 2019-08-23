@@ -555,14 +555,12 @@ class Pipeline(object):
         hough_bw = np.zeros((h, w))
         # edges = cv2.Canny(out_img,50,150,aperture_size=3)
         lines = cv2.HoughLines(mask.astype("uint8"), 0.1, np.pi / 90, 700)
-        # print(lines.shape)
         counts = 0
         for line in lines:
             if line[0][1] > 0.01 and line[0][1] < 1.55:
                 continue
             if line[0][1] > 1.58:
                 continue
-        # print(line)
             for rho, theta in line:
                 a = np.cos(theta)
                 b = np.sin(theta)
@@ -612,15 +610,12 @@ class Pipeline(object):
 
         # ver_eq = vert_equalize(ver_cons)
         # Making the horizontal distances equal is not as accurate, because the plots are not all perfectly the same size.
-        # print(len(ver_cons))
-        # print(len(ver_eq))
 
 
         # Write out various images using different sets of lines.
         mask = self.mask_write((h, w), ver_cons, hor_cons, "test0.png")
         mask = np.bitwise_not(mask.astype("uint8"))
         cv2.imwrite("mask2.png", mask)
-        # mask_write((h,w),ver_cons,hor_cons,"test.png") # Redundant with test0
         self.mask_write((h, w), ver2, hor2, "test2.png")
 
         cutout = img.copy()
@@ -637,15 +632,6 @@ class Pipeline(object):
         print(hough_bw.shape)
         cv2.imwrite("cutout.png",output)
         mask = hough_bw
-
-        #b,g,r = cv2.split(img)
-        #b = b & hough_bw
-        #g = g & hough_bw
-        #r = r & hough_bw
-
-        #cutouts = cv2.merge(b,g)
-        #cutouts = cv2.merge(cutouts,r)
-
 
         ### Extract plots  49x16
         # I was using hard-coded values to see about how big the area of each plot is
@@ -675,12 +661,11 @@ class Pipeline(object):
 
             hist.append(count)
 
-        plot2 = [plot for plot in plots if plot[4] > 4000]  # ~5000 for 20mb imgs, 35000 for the 300mb ones
+        plot2 = [plot for plot in plots if plot[4] > 10000]  # ~5000 for 20mb imgs, 35000 for the 300mb ones
         print(len(plot2))
 
         plot2 = [plot for plot in plot2 if plot[4] < 80000]
         print(len(plot2))
-        # 49*16
 
 
         # Create images that are the final mask, as well as the original image
@@ -778,15 +763,14 @@ class Pipeline(object):
                 grid_col += 1
 
         csv_data = []
-        coord_img = hmap.copy()
+        coord_img = img.copy()
         print(coord_img.shape)
         for plot in plots_with_grids:
             (r, c, x, y, w, h, a) = plot
-            (x, y, w, h, a) = self.convert_coords((x, y, w, h, a), img.shape[:2],
-                                             hmap.shape[:2])  # Uncomment when using hmap
+            # (x, y, w, h, a) = self.convert_coords((x, y, w, h, a), img.shape[:2], hmap.shape[:2])  # Uncomment when using hmap
             coord_img = self.print_coords_on_img(coord_img, r, c, x, y, w, h)
 
-            plot_img = hmap[y:y + h, x:x + w]
+            plot_img = img[y:y + h, x:x + w]
             plot_img = self.remove_edge_effects(plot_img)
             veg_i, aniso, cover, green, entro = self.get_data(plot_img)
 
@@ -809,10 +793,10 @@ class Pipeline(object):
 
         plot0 = plots_with_grids[21]
         (r, c, x, y, w, h, a) = plot0
-        (x, y, w, h, a) = self.convert_coords((x, y, w, h, a), img.shape[:2], hmap.shape[:2])
-        hplot = self.remove_edge_effects(hmap[y:y + h, x:x + w])
-        height = self.get_height(hplot)
-        cv2.imwrite("test_plot.png", hmap[y:y + h, x:x + w])
+        #(x, y, w, h, a) = self.convert_coords((x, y, w, h, a), img.shape[:2], hmap.shape[:2])
+        # hplot = self.remove_edge_effects(hmap[y:y + h, x:x + w])
+        # height = self.get_height(hplot)
+        # cv2.imwrite("test_plot.png", hmap[y:y + h, x:x + w])
         # print(height)
         # with open('test.csv','w') as csvfile:
         #    data_w = csv.writer(csvfile)
