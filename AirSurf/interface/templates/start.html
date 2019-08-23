@@ -1,0 +1,79 @@
+<div class="card m-auto" style="width:60%">
+    <h5 class="card-header">Run AirSurf: Wheat</h5>
+  <div class="card-body">
+    <h6 class="card-subtitle mb-5 text-muted">Upload image file below to run analysis</h6>
+
+      <form action="/run" method="post">
+  <div class="form-group">
+
+
+<p>RGB Image File:</p>
+          <div class="custom-file">
+  <input type="file" class="custom-file-input" id="rgbFile" oninput="validate()"  accept=".jpeg, .jpg" name="rgbFile">
+  <label class="custom-file-label" for="rgbFile">Choose file</label>
+</div>
+
+
+             <p class="mt-4">HMap Image File (optional):</p>
+      <div class="custom-file">
+  <input type="file" class="custom-file-input" id="hmapFile" oninput="validate()"  accept=".jpeg, .jpg" name="hmapFile">
+  <label class="custom-file-label" for="hmapFile">Choose file</label>
+</div>
+
+<p class="mt-4">Output Directory:</p>
+      <div class="custom-file">
+  <input type="file" class="custom-file-input" id="outFile" oninput="validate()" directory name="outFile">
+  <label class="custom-file-label" for="outFile">Choose folder</label>
+</div>
+
+  <button type="submit" class="btn btn-lg btn-primary mt-4" id="submit_btn" disabled>Submit</button>
+
+      </div>
+
+</form>
+
+  </div>
+</div>
+</div>
+
+<script>
+
+    function validate() {
+        valid = true;
+
+        if(document.getElementById('rgbFile').value == '')
+        {
+            valid = false;
+        }
+
+        if(document.getElementById('outFile').value == '')
+        {
+            valid = false;
+        }
+
+        if(valid)
+        {
+            $('#submit_btn').prop('disabled', false);
+        } else {
+            $('#submit_btn').prop('disabled', true);
+        }
+    }
+
+</script>
+
+<script>
+            $('#rgbFile').on('change',function(){
+                var fileName = $(this).val().replace('C:\\fakepath\\', " ");
+                $(this).next('.custom-file-label').html(fileName);
+            })
+
+    $('#outFile').on('change',function(){
+                var fileName = $(this).val().replace('C:\\fakepath\\', " ");
+                $(this).next('.custom-file-label').html(fileName);
+            })
+
+    $('#hmapFile').on('change',function(){
+                var fileName = $(this).val().replace('C:\\fakepath\\', " ");
+                $(this).next('.custom-file-label').html(fileName);
+            })
+        </script>

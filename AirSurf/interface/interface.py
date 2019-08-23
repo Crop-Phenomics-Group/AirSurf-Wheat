@@ -1,6 +1,8 @@
 
-from flask import Flask, render_template, url_for
+from flask import Flask, render_template, url_for, request
 from gevent.pywsgi import WSGIServer
+import os
+from threading import Thread
 
 class Interface(object):
 
@@ -25,6 +27,9 @@ class Interface(object):
         # self.app.config['UPLOAD_FOLDER'] = self.upload_folder
 
     def run(self):
+
+        BrowserLauncher.getInstance().start()
+
         http_server = WSGIServer(('', self.port), self.app)
         http_server.serve_forever()
 
@@ -38,7 +43,7 @@ class Interface(object):
                                bootstrap_css=url_for('static', filename='bootstrap.min.css'))
 
     def makeFooter(self):
-        return render_template('foot.html', jquery=url_for('static', filename='jquery.min.css'),
+        return render_template('foot.html', jquery=url_for('static', filename='jquery.min.js'),
                                popper=url_for('static', filename='popper.min.js'),
                                bootstrap_js=url_for('static', filename='bootstrap.min.js'))
 
@@ -46,4 +51,28 @@ class Interface(object):
 
         @self.app.route("/", methods=['GET', 'POST'])
         def home():
-            return self.makeHeader() + self.makeFooter()
+            return self.makeHeader() + render_template('start.html') + self.makeFooter()
+
+        @self.app.route("/run", methods=['GET', 'POST'])
+        def run():
+            print(request.form)
+            return self.makeHeader() + render_template('processing.html') + self.makeFooter()
+
+import time
+
+class BrowserLauncher(Thread):
+
+    instance = None
+
+    @staticmethod
+    def getInstance():
+        if BrowserLauncher.instance is None:
+            BrowserLauncher.instance = BrowserLauncher()
+        return BrowserLauncher.instance
+
+    def __init__(self):
+        super().__init__()
+
+    def run(self):
+        time.sleep(2)
+        os.system('explorer "http://localhost"')

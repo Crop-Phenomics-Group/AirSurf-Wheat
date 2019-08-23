@@ -3,6 +3,7 @@ import numpy as np
 import cv2
 import math
 import csv
+from threading import Thread
 
 # from keras.preprocessing.image import ImageDataGenerator, array_to_img, img_to_array, load_img
 from keras.models import Sequential
@@ -33,7 +34,7 @@ from skimage.feature import greycomatrix, greycoprops
 #%set_env KMP_DUPLICATE_LIB_OK=TRUE # TODO set environment variable from python
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
-class Pipeline(object):
+class Pipeline(Thread):
 
     instance = None
 
@@ -487,21 +488,29 @@ class Pipeline(object):
         return img
 
 
+    def setup(self, img_path, output_dir, hmap_path=None):
+        self.img_path = img_path
+        self.output_dir = output_dir
+        self.hmap_path = hmap_path
 
 
+    def run(self):
+        # Save or load model
 
-    def run_pipeline(self, img_path, output_dir, hmap_path=None):
-        # Load the neural network model
-        model = load_model("../model_5.h5")
+        #model.save("models/soil/model_5.h5")
+        model = load_model("model_5.h5")
+        # Info about model
+        model.summary()
 
         # If one is passed, load the heightmap
         hmap = None
-        if hmap_path is not None:
-            hmap = cv2.imread(hmap_path)
+
+        if self.hmap_path is not None:
+            hmap = cv2.imread(self.hmap_path)
 
 
 
-        img = cv2.imread(img_path)
+        img = cv2.imread(self.img_path)
 
 
         if img.shape[2] > 3:
