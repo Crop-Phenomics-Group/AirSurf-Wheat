@@ -4,33 +4,34 @@ import cv2
 import math
 import csv
 
-from keras.preprocessing.image import ImageDataGenerator, array_to_img, img_to_array, load_img
+# from keras.preprocessing.image import ImageDataGenerator, array_to_img, img_to_array, load_img
 from keras.models import Sequential
 from keras.layers import Conv2D, MaxPooling2D
 from keras.layers import Activation, Dropout, Flatten, Dense, BatchNormalization
-from keras.models import model_from_json
+# from keras.models import model_from_json
 from keras.models import load_model
-from keras.callbacks import ModelCheckpoint, EarlyStopping
-from keras.optimizers import sgd
+# from keras.callbacks import ModelCheckpoint, EarlyStopping
+# from keras.optimizers import sgd
 from keras import backend as K
-from keras import utils as np_utils
-import keras
+# from keras import utils as np_utils
+# import keras
 
 import os
-import glob
-import matplotlib.pyplot as plt
+# import glob
+# import matplotlib.pyplot as plt
 
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelBinarizer
-from sklearn.metrics import classification_report
+# from sklearn.model_selection import train_test_split
+# from sklearn.preprocessing import LabelBinarizer
+# from sklearn.metrics import classification_report
 
 from skimage.measure import label, regionprops, shannon_entropy
 from skimage.feature import greycomatrix, greycoprops
-import pickle
+# import pickle
 
 
 # print(os.getcwd())
 #%set_env KMP_DUPLICATE_LIB_OK=TRUE # TODO set environment variable from python
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 class Pipeline(object):
 
@@ -490,15 +491,11 @@ class Pipeline(object):
 
 
     def run_pipeline(self, img_path, output_dir, hmap_path=None):
-        # Save or load model
+        # Load the neural network model
+        model = load_model("../model_5.h5")
 
-        #model.save("models/soil/model_5.h5")
-        model = load_model("model_5.h5")
-        # Info about model
-        model.summary()
-
+        # If one is passed, load the heightmap
         hmap = None
-
         if hmap_path is not None:
             hmap = cv2.imread(hmap_path)
 
@@ -518,22 +515,19 @@ class Pipeline(object):
         if hmap is not None:
             hmap_h, hmap_w = hmap.shape[:2]
 
-        # What images should we read in for segmentation
-        #img = cv2.imread("/Users/bauera/work/airsurf/air_surf_wheat_cnn/20mb_imgs/ChurchFarm-180613-DFW.png")
-        #img = cv2.imread("20mb_pngs/Morley_180611.png")
+
         (images, labels, x_values, y_values) = self.get_small_imgs_from_mosaic(img)
 
         print(len(images))
 
         # Run the model on the small images extracted from the original
-        outputs = model.predict(images,verbose=1)
+        outputs = model.predict(images)#,verbose=1) # Remove verbose mode because it doesn't work properly in pycharm
 
         # Draws the areas classified as soil with >98% confidence on
         # the original image as well as a black and white mask and
         # saves them to disk
         h, w = img.shape[:2]
         size = 9
-        step = 6
         out_img = img.copy()
         out_img_bw = np.zeros((h, w))
 
@@ -543,16 +537,11 @@ class Pipeline(object):
                 y = y_values[i]
                 cv2.rectangle(out_img, (x + 1, y + 1), (x + size - 1, y + size - 1), (0, 0, 255), -1)
                 cv2.rectangle(out_img_bw, (x + 1, y + 1), (x + size - 1, y + size - 1), 255, -1)
-            # out_img_bw[y+1:y+size-1][x+1:x+size-1] = 1
-            # out_img_bw[x+1:x+size-1][y+1:y+size-1] = 1
 
         cv2.imwrite("output.png", out_img)
 
         out_img_bw = out_img_bw * 255
         out_img_bw.astype("uint8")
-        # kernel = np.ones((11,11))
-        # out_img_bw =cv2.dilate(out_img_bw,kernel,1)
-        # out_img_bw = cv2.morphologyEx(out_img_bw, cv2.MORPH_CLOSE, kernel)
         cv2.imwrite("output_bw.png", out_img_bw)
 
         # Draw all the Hough Lines on the image.
@@ -596,7 +585,7 @@ class Pipeline(object):
 
         # Separate the Hough lines into horizontal and vertical lines
 
-        ### I want to combine the nearby lines rather than just making them thicker.
+        # I want to combine the nearby lines rather than just making them thicker.
         hor = []
         ver = []
 
@@ -677,7 +666,6 @@ class Pipeline(object):
 
         area_set = list(set(areas))
         hist = []
-        # print(area_set)
 
         for i in area_set:
             count = 0
@@ -686,24 +674,6 @@ class Pipeline(object):
                     count += 1
 
             hist.append(count)
-
-        # plt.bar(hist,area_set)
-        # plt.bar(area_set,hist)
-        # plt.show()
-
-        # 2016 dimensions
-        # rows = 16
-        # cols = 49
-
-        # DFW dimensions
-        # rows = 34
-        # cols = 21
-
-        # Rothamsted dimensions
-        # rows = 6
-        # cols = 60
-        # num_plots = rows * cols
-        plot2 = []
 
         plot2 = [plot for plot in plots if plot[4] > 4000]  # ~5000 for 20mb imgs, 35000 for the 300mb ones
         print(len(plot2))
@@ -731,7 +701,7 @@ class Pipeline(object):
 
         hmap_plots = []
 
-        if hmap_path is not None:
+        if hmap is not None:
 
             hmap_mask = np.zeros((hmap_h, hmap_w))
             for plot in plot2:
@@ -787,24 +757,25 @@ class Pipeline(object):
         # if not os.path.exists(dir_name):
         #    os.mkdir(dir_name)
 
-        if hmap_plots[0][0] > hmap_plots[-1][0]:
-            hmap_plots = list(reversed(hmap_plots))
+        if hmap is not None:
+            if hmap_plots[0][0] > hmap_plots[-1][0]:
+                hmap_plots = list(reversed(hmap_plots))
 
-        grid_row = 1
-        grid_col = 1
-        raw_y = hmap_plots[0][1]
-        plots_with_grids = []
+            grid_row = 1
+            grid_col = 1
+            raw_y = hmap_plots[0][1]
+            plots_with_grids = []
 
-        for plot in hmap_plots:
-            if plot[1] != raw_y:
-                grid_row += 1
-                grid_col = 1
-                raw_y = plot[1]
-            name = dir_name + "/" + str(grid_row) + "_" + str(grid_col) + ".png"
-            cv2.imwrite(name, hmap_final[plot[1]:plot[1] + plot[3], plot[0]:plot[0] + plot[2]])
-            plots_with_grids.append((grid_row, grid_col, plot[0], plot[1], plot[2], plot[3], plot[4]))
+            for plot in hmap_plots:
+                if plot[1] != raw_y:
+                    grid_row += 1
+                    grid_col = 1
+                    raw_y = plot[1]
+                name = dir_name + "/" + str(grid_row) + "_" + str(grid_col) + ".png"
+                cv2.imwrite(name, hmap_final[plot[1]:plot[1] + plot[3], plot[0]:plot[0] + plot[2]])
+                plots_with_grids.append((grid_row, grid_col, plot[0], plot[1], plot[2], plot[3], plot[4]))
 
-            grid_col += 1
+                grid_col += 1
 
         csv_data = []
         coord_img = hmap.copy()
