@@ -494,13 +494,18 @@ class Pipeline(Thread):
         self.hmap_path = hmap_path
 
 
-    def run(self):
+
+    def run_pipeline(self, img_path, output_dir, hmap_path=None):
+    # def run(self):
         # Save or load model
 
         #model.save("models/soil/model_5.h5")
-        model = load_model("model_5.h5")
+        model = load_model("../model_5.h5")
         # Info about model
         model.summary()
+
+        self.img_path = img_path
+        self.hmap_path = hmap_path
 
         # If one is passed, load the heightmap
         hmap = None
