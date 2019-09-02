@@ -59,7 +59,6 @@ class Pipeline(Thread):
 
         return up_img
 
-
     # Load images from a base directory that contains two subfolders,
     # one for each of the two classes
     def load_imgs(self, base_path):
@@ -85,7 +84,6 @@ class Pipeline(Thread):
 
         return (np.array(data), np.array(labels))
 
-
     # Build the CNN
     def build_model(self, width, height, depth, classes):
         model = Sequential()
@@ -109,7 +107,6 @@ class Pipeline(Thread):
         model.add(Dense(classes, activation="softmax"))
 
         return model
-
 
     # This extracts 9x9 images from a larger image and returns
     # 4 numpy arrays, the images, an empty array for labels to be added
@@ -137,7 +134,6 @@ class Pipeline(Thread):
         labels = [None] * len(X)
 
         return (np.array(images_to_pred), np.array(labels), np.array(X), np.array(Y))
-
 
     # Courtesy of pyimagesearch.com
     def order_points(self, pts):
@@ -217,7 +213,6 @@ class Pipeline(Thread):
         # cv2.imwrite("warped.png", warped)
         # return warped
 
-
     # Combines lines that are too close together, ideally
     # resulting in only 1 line between plots.
     def line_consensus(self, lines):
@@ -242,7 +237,6 @@ class Pipeline(Thread):
 
         return cons
 
-
     # Creates a mask image from the x and y coordinates of
     # vertical and horizontal lines, respectively.
     def mask_write(self, shape, ver_cons, hor_cons, name):
@@ -263,7 +257,6 @@ class Pipeline(Thread):
 
         cv2.imwrite(name, mask)
         return mask
-
 
     # Because the fields have small plots that make it so the
     # lines between plots are not uniformly spaced horizontally
@@ -293,6 +286,7 @@ class Pipeline(Thread):
 
         return ret_lines
 
+    # Normalize an array between 0 and 1
     def norm_range(self, mat, min_val, max_val):
         width = max_val - min_val
 
@@ -323,6 +317,7 @@ class Pipeline(Thread):
 
         return np.mean(veg)
 
+    # Calculate anisotropy, courtesy of Chris Applegate
     def anisotropy(self, img):
         h, w = img.shape[:2]
         gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
@@ -368,6 +363,7 @@ class Pipeline(Thread):
 
         return tn, score_n
 
+    # Return the average canopy coverage across the plot
     def coverage(self, img):
         h, w = img.shape[:2]
         lab_img = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
@@ -383,6 +379,7 @@ class Pipeline(Thread):
 
         return float(num_pix_nonzero) / float(num_pixels)
 
+    # Return median greenness of a plot
     def green_median(self, img):
         h, w = img.shape[:2]
 
@@ -391,10 +388,12 @@ class Pipeline(Thread):
 
         return med
 
+    # Return Shannon Entropy of a plot
     def entropy(self, img):
         entro = shannon_entropy(img)
         return entro
 
+    # Calculate GLCM traits on the texture image
     def glcm_entropy(self, img):
         # bw_img = rgb2grey(img)
         # mask = cv2.threshold(bw_img, 127, 255, cv2.THRESH_OTSU)
@@ -421,6 +420,7 @@ class Pipeline(Thread):
 
         return (contrast, dissimilarity, homogeneity, energy, correlation, asm)
 
+    # Remove the images edge effects
     def remove_edge_effects(self, plot_img):
         h, w = plot_img.shape[:2]
         h_edge = 0
@@ -434,6 +434,7 @@ class Pipeline(Thread):
 
         return plot_img[0 + h_edge:h - h_edge, 0 + w_edge:w - w_edge, :]
 
+    # Calculate median height from a heatmap
     def get_height(self, img):
         if len(img.shape) > 2:
             plot_img = img[:, :, 0]
@@ -479,7 +480,7 @@ class Pipeline(Thread):
         h = int(h * target_shape[0])
         a = w * h
 
-        return (x, y, w, h, a)
+        return x, y, w, h, a
 
     def print_coords_on_img(self, img,r,c,x,y,w,h):
         font = cv2.FONT_HERSHEY_SIMPLEX
@@ -487,31 +488,215 @@ class Pipeline(Thread):
         cv2.putText(img,string,(int(x+w/3),int(y+h/2)), font,1, (0,0,255),2,cv2.LINE_AA)
         return img
 
-
     def setup(self, img_path, output_dir, hmap_path=None):
         self.img_path = img_path
         self.output_dir = output_dir
         self.hmap_path = hmap_path
 
+    # Perform all the analysis for a single image, with or without a heightmap
+    def single_img_analysis(self):
+        self.img = cv2.imread(self.img_path)
+        self.hmap = None
+        if self.hmap_path is not None:
+            self.hmap = cv2.imread(self.hmap_path)
+        if self.img.shape[2] > 3:
+            self.img = self.img[:,:,:3]
+
+        self.img_h, self.img_w = self.img.shape[:2]
+
+        self.hmap_h = 0
+        self.hmap_w = 0
+
+        if self.hmap is not None:
+            self.hmap_h, self.hmap_w = self.hmap.shape[:2]
 
 
-    def run_pipeline(self, img_path, output_dir, hmap_path=None):
+        (images, labels, x_values, y_values) = self.get_small_imgs_from_mosaic(self.img)
+
+        # Run the model on the small images extracted from the original
+        self.outputs = self.model.predict(images)
+
+        size = 9
+        out_img = self.img.copy()
+        out_img_bw = np.zeros((self.img_h, self.img_w))
+
+        for i in range(len(self.outputs)):
+            if self.outputs[i][1] >= 0.98:
+                x = x_values[i]
+                y = y_values[i]
+                cv2.rectangle(out_img, (x + 1, y + 1), (x + size - 1, y + size - 1), (0, 0, 255), -1)
+                cv2.rectangle(out_img_bw, (x + 1, y + 1), (x + size - 1, y + size - 1), 255, -1)
+
+        cv2.imwrite(os.join(self.output_dir,"output.png"), out_img)
+
+        out_img_bw = out_img_bw * 255
+        out_img_bw.astype("uint8")
+        cv2.imwrite(os.join(self.output_dir,"output_bw.png"), out_img_bw)
+
+        # Draw all the Hough Lines on the image.
+        # Save a black and white mask, and the original
+        # with lines drawn on it.
+        out = self.img.copy()
+
+        ### Transition to using Hough lines
+        mask = out_img_bw
+        hough_bw = np.zeros((self.img_h, self.img_w))
+        # edges = cv2.Canny(out_img,50,150,aperture_size=3)
+        lines = cv2.HoughLines(mask.astype("uint8"), 0.1, np.pi / 90, 700)
+        counts = 0
+        for line in lines:
+            if line[0][1] > 0.01 and line[0][1] < 1.55:
+                continue
+            if line[0][1] > 1.58:
+                continue
+            for rho, theta in line:
+                a = np.cos(theta)
+                b = np.sin(theta)
+                x0 = a * rho
+                y0 = b * rho
+                x1 = int(x0 + 10000 * (-b))
+                y1 = int(y0 + 10000 * a)
+                x2 = int(x0 - 10000 * (-b))
+                y2 = int(y0 - 10000 * a)
+
+                cv2.line(out, (x1, y1), (x2, y2), (0, 0, 255), 1)
+                cv2.line(hough_bw, (x1, y1), (x2, y2), 255, 1)
+                counts += 1
+
+        hough_bw = np.bitwise_not(hough_bw.astype("uint8"))
+        print(counts)
+
+        cv2.imwrite(os.join(self.output_dir,'houghlines.png'), out)
+        cv2.imwrite(os.join(self.output_dir,'houghlines_bw.png'), hough_bw)
+
+        # Separate the Hough lines into horizontal and vertical lines
+
+        # I want to combine the nearby lines rather than just making them thicker.
+        hor = []
+        ver = []
+
+        for line in lines:
+            if line[0][1] < 0.01:
+                ver.append(line[0, 0])
+            elif line[0][1] > 1.55 and line[0][1] < 1.58:
+                hor.append(line[0, 0])
+
+        hor.sort()
+        ver.sort()
+        ver2 = ver
+        hor2 = hor
+        hor_cons = []
+        ver_cons = []
+
+        while len(hor_cons) != len(hor):
+            hor_cons = hor
+            hor = self.line_consensus(hor)
+
+        while len(ver_cons) != len(ver):
+            ver_cons = ver
+            ver = self.line_consensus(ver)
+
+        # ver_eq = vert_equalize(ver_cons)
+        # Making the horizontal distances equal is not as accurate, because the plots are not all perfectly the same size.
+
+        # Write out various images using different sets of lines.
+        mask = self.mask_write((self.img_h, self.img_w), ver_cons, hor_cons, os.join(self.output_dir,"test0.png"))
+        mask = np.bitwise_not(mask.astype("uint8"))
+        cv2.imwrite(os.join(self.output_dir,"mask2.png"), mask)
+        self.mask_write((self.img_h, self.img_w), ver2, hor2, os.join(self.output_dir,"test2.png"))
+
+        cutout = self.img.copy()
+        output = cv2.bitwise_and(cutout, cutout, mask=mask)
+        print(cutout.shape)
+        cv2.imwrite(os.join(self.output_dir,"test3.png"), output)
+
+        # Write an image that should only include the areas that are in plots, but will also include small plots.
+        cutout = self.img.copy()
+
+        output = cv2.bitwise_and(cutout,cutout,mask=hough_bw)
+        print(cutout.shape)
+        print(hough_bw.shape)
+        cv2.imwrite(os.join(self.output_dir,"cutout.png"),output)
+        mask = hough_bw
+
+        # Extract plots
+        # I was using hard-coded values to see about how big the area of each plot is
+        # but it should be detected automatically, using the numbers of rows
+        # and columns.
+        plots = []
+
+        im2, contours, hierarchy = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+        for contour in contours:
+            x, y, width, height = cv2.boundingRect(contour)
+            area = width * height
+            plots.append((x, y, width, height, area))
+
+        areas = []
+        for plot in plots:
+            areas.append(plot[4])
+
+        area_set = list(set(areas))
+        hist = []
+
+        for i in area_set:
+            count = 0
+            for area in areas:
+                if area == i:
+                    count += 1
+
+            hist.append(count)
+
+        plot2 = [plot for plot in plots if plot[4] > 10000]  # ~5000 for 20mb imgs, 35000 for the 300mb ones
+        print(len(plot2))
+
+        plot2 = [plot for plot in plot2 if plot[4] < 80000]
+        print(len(plot2))
+
+        # Create images that are the final mask, as well as the original image
+        # with all the non-plot regions removed.
+        final_mask = np.zeros(hough_bw.shape)
+        for plot in plot2:
+            final_mask[plot[1]:plot[1]+plot[3],plot[0]:plot[0]+plot[2]] = 1
+
+        plots_img = cv2.bitwise_and(cutout,cutout,mask=final_mask.astype("uint8"))
+
+        cv2.imwrite(os.join(self.output_dir,"plots.png"),plots_img)
+
+        # If heightmap is given, extract heights here.
+
+
+
+
+        pass
+
+    # Run the pipeline for the analysis
+    def run_pipeline(self, output_dir, parent_dir=None, seg_path=None, img_path=None, hmap_path=None):
+        if parent_dir is None and img_path is None:
+            print("Either a parent directory or image path is required, but neither was given")
+            exit(1)
+
+        if parent_dir is not None and seg_path is None:
+            print("A parent directory is given, but no date for the segmentation was supplied")
+            exit(2)
     # def run(self):
         # Save or load model
 
         #model.save("models/soil/model_5.h5")
-        model = load_model("../model_5.h5")
+        self.model = load_model("../model_5.h5")
         # Info about model
-        model.summary()
+        #model.summary()
 
         self.img_path = img_path
         self.hmap_path = hmap_path
+        self.output_dir = output_dir
+        self.parent_dir = parent_dir
 
         # If one is passed, load the heightmap
-        hmap = None
+        self.hmap = None
 
         if self.hmap_path is not None:
-            hmap = cv2.imread(self.hmap_path)
+            self.hmap = cv2.imread(self.hmap_path)
 
 
 
@@ -526,8 +711,8 @@ class Pipeline(Thread):
         hmap_h = 0
         hmap_w = 0
 
-        if hmap is not None:
-            hmap_h, hmap_w = hmap.shape[:2]
+        if self.hmap is not None:
+            hmap_h, hmap_w = self.hmap.shape[:2]
 
 
         (images, labels, x_values, y_values) = self.get_small_imgs_from_mosaic(img)
@@ -535,7 +720,7 @@ class Pipeline(Thread):
         print(len(images))
 
         # Run the model on the small images extracted from the original
-        outputs = model.predict(images)#,verbose=1) # Remove verbose mode because it doesn't work properly in pycharm
+        outputs = self.model.predict(images)#,verbose=1) # Remove verbose mode because it doesn't work properly in pycharm
 
         # Draws the areas classified as soil with >98% confidence on
         # the original image as well as a black and white mask and
@@ -581,9 +766,9 @@ class Pipeline(Thread):
                 x0 = a * rho
                 y0 = b * rho
                 x1 = int(x0 + 10000 * (-b))
-                y1 = int(y0 + 10000 * (a))
+                y1 = int(y0 + 10000 * a)
                 x2 = int(x0 - 10000 * (-b))
-                y2 = int(y0 - 10000 * (a))
+                y2 = int(y0 - 10000 * a)
 
                 cv2.line(out, (x1, y1), (x2, y2), (0, 0, 255), 1)
                 cv2.line(hough_bw, (x1, y1), (x2, y2), 255, 1)
@@ -625,7 +810,6 @@ class Pipeline(Thread):
         # ver_eq = vert_equalize(ver_cons)
         # Making the horizontal distances equal is not as accurate, because the plots are not all perfectly the same size.
 
-
         # Write out various images using different sets of lines.
         mask = self.mask_write((h, w), ver_cons, hor_cons, "test0.png")
         mask = np.bitwise_not(mask.astype("uint8"))
@@ -637,7 +821,6 @@ class Pipeline(Thread):
         print(cutout.shape)
         cv2.imwrite("test3.png", output)
 
-
         # Write an image that should only include the areas that are in plots, but will also include small plots.
         cutout = img.copy()
 
@@ -647,7 +830,7 @@ class Pipeline(Thread):
         cv2.imwrite("cutout.png",output)
         mask = hough_bw
 
-        ### Extract plots  49x16
+        # Extract plots
         # I was using hard-coded values to see about how big the area of each plot is
         # but it should be detected automatically, using the numbers of rows
         # and columns.
@@ -681,26 +864,23 @@ class Pipeline(Thread):
         plot2 = [plot for plot in plot2 if plot[4] < 80000]
         print(len(plot2))
 
-
         # Create images that are the final mask, as well as the original image
         # with all the non-plot regions removed.
         final_mask = np.zeros(hough_bw.shape)
         for plot in plot2:
             final_mask[plot[1]:plot[1]+plot[3],plot[0]:plot[0]+plot[2]] = 1
 
-
         plots_img = cv2.bitwise_and(cutout,cutout,mask=final_mask.astype("uint8"))
 
         cv2.imwrite("plots.png",plots_img)
-        #cv2.imwrite("final_mask.png",final_mask)
-
+        # cv2.imwrite("final_mask.png",final_mask)
 
         # Check to see if I can overlay plots on heightmap
         # plot is (x,y,w,h,a)
 
         hmap_plots = []
 
-        if hmap is not None:
+        if self.hmap is not None:
 
             hmap_mask = np.zeros((hmap_h, hmap_w))
             for plot in plot2:
@@ -717,7 +897,7 @@ class Pipeline(Thread):
                 hmap_mask[y:y + h, x:x + w] = 1
                 hmap_plots.append((x, y, w, h, a))
 
-            hmap_final = cv2.bitwise_and(hmap, hmap, mask=hmap_mask.astype("uint8"))
+            hmap_final = cv2.bitwise_and(self.hmap, self.hmap, mask=hmap_mask.astype("uint8"))
             cv2.imwrite("heightmap_plots.png", hmap_final)
 
         # Save each plot image in a folder, with the row and column
@@ -756,9 +936,13 @@ class Pipeline(Thread):
         # if not os.path.exists(dir_name):
         #    os.mkdir(dir_name)
 
-        if hmap is not None:
+        if self.hmap is not None:
             if hmap_plots[0][0] > hmap_plots[-1][0]:
                 hmap_plots = list(reversed(hmap_plots))
+
+                if len(hmap_plots) > 1000:
+                    print("this is way too long for one, there must be an error")
+
 
             grid_row = 1
             grid_col = 1
