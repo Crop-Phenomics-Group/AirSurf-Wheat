@@ -4,6 +4,10 @@ import cv2
 import math
 import csv
 from threading import Thread
+import re
+from skimage.filters import threshold_otsu
+from skimage import img_as_ubyte
+import pandas as pd
 
 # from keras.preprocessing.image import ImageDataGenerator, array_to_img, img_to_array, load_img
 from keras.models import Sequential
@@ -320,7 +324,8 @@ class Pipeline(Thread):
     # Calculate anisotropy, courtesy of Chris Applegate
     def anisotropy(self, img):
         h, w = img.shape[:2]
-        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        # gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        gray = img
         gray = gray.astype('float64')
 
         grad_x = np.diff(gray, axis=1)
@@ -366,18 +371,30 @@ class Pipeline(Thread):
     # Return the average canopy coverage across the plot
     def coverage(self, img):
         h, w = img.shape[:2]
-        lab_img = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
-        luminance = lab_img[:, :, 0]
+        thresh = threshold_otsu(img)
+        binary_img = img > thresh
 
-        mean_lum = np.mean(luminance)
-        std_lum = np.std(luminance)
+        num_px = h * w
+        num_px_nonzero = len(np.flatnonzero(binary_img))
 
-        _, binary = cv2.threshold(luminance, mean_lum - std_lum, 255, cv2.THRESH_BINARY)
+        # plt.imshow(binary_img, cmap='gray')
+        # plt.show()
 
-        num_pixels = h * w
-        num_pix_nonzero = len(np.flatnonzero(binary))
+        return float(num_px_nonzero) / float(num_px)
 
-        return float(num_pix_nonzero) / float(num_pixels)
+        # h, w = img.shape[:2]
+        # lab_img = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
+        # luminance = lab_img[:, :, 0]
+        #
+        # mean_lum = np.mean(luminance)
+        # std_lum = np.std(luminance)
+        #
+        # _, binary = cv2.threshold(luminance, mean_lum - std_lum, 255, cv2.THRESH_BINARY)
+        #
+        # num_pixels = h * w
+        # num_pix_nonzero = len(np.flatnonzero(binary))
+        #
+        # return float(num_pix_nonzero) / float(num_pixels)
 
     # Return median greenness of a plot
     def green_median(self, img):
@@ -395,30 +412,21 @@ class Pipeline(Thread):
 
     # Calculate GLCM traits on the texture image
     def glcm_entropy(self, img):
-        # bw_img = rgb2grey(img)
-        # mask = cv2.threshold(bw_img, 127, 255, cv2.THRESH_OTSU)
-        # b,g,r = cv2.split(img)
-        # ex_g = 2.0 * g - b - r
-        # ex_g = ex_g.astype("uint8")
-        # ex_g = cv2.cvtColor(ex_g, cv2.COLOR_GRAY2RGB)
-        # ex_g = cv2.cvtColor(ex_g, cv2.COLOR_RGB2GRAY)
-        # print(ex_g.shape)
-        # print(ex_g.dtype)
-
-        mask = cv2.threshold(img, 127, 255, cv2.THRESH_OTSU)
-        # mask = cv2.threshold(ex_g, 127, 255, cv2.THRESH_OTSU)
-        # glcm = greycomatrix(mask,10,0, normed=True)
-        glcm = greycomatrix(img, [10], [0, np.pi / 2], normed=True, symmetric=True)
-        # print(glcm)
+        img_max = np.max(img)
+        img_min = np.min(img)
+        img_copy = img.copy()
+        self.norm_range(img_copy,img_min,img_max)
+        norm_img = img_as_ubyte(img_copy)
+        glcm = greycomatrix(norm_img, [10], [0, np.pi / 2], normed=True, symmetric=True)
 
         contrast = greycoprops(glcm, 'contrast')[0][0]
-        dissimilarity = greycoprops(glcm, 'dissimilarity')[0]
+        dissimilarity = greycoprops(glcm, 'dissimilarity')[0][0]
         homogeneity = greycoprops(glcm, 'homogeneity')[0]
         energy = greycoprops(glcm, 'energy')[0]
-        correlation = greycoprops(glcm, 'correlation')[0]
+        correlation = greycoprops(glcm, 'correlation')[0][0]
         asm = greycoprops(glcm, 'ASM')[0]
 
-        return (contrast, dissimilarity, homogeneity, energy, correlation, asm)
+        return (correlation, dissimilarity)
 
     # Remove the images edge effects
     def remove_edge_effects(self, plot_img):
@@ -459,13 +467,37 @@ class Pipeline(Thread):
         return height
 
     def get_data(self, img):
-        plot = self.remove_edge_effects(img)
-        veg_i = self.vegetative_index(plot)
-        aniso = self.anisotropy(plot)
-        cover = self.coverage(plot)
-        green = self.green_median(plot)
-        entro = self.entropy(plot)
-        return (veg_i, aniso[1], cover, green, entro)
+        f_img = img.astype(np.float64) / 255.0  # Normalize the image
+        blue, green, red = cv2.split(f_img)
+
+        ex_g = 2.0 * green - red - blue
+        ex_r = 1.4 * red - blue
+        veg = ex_g - ex_r
+
+        vari = (green - red) / (green + red - blue)
+
+        self.norm_range(veg, -2.4, 2.0)
+
+        med_g = np.median(green)
+        mean_g = np.mean(green)
+        med_ex_g = np.median(ex_g)
+        mean_ex_g = np.mean(ex_g)
+        med_ex_r = np.median(ex_r)
+        mean_ex_r = np.mean(ex_r)
+        med_veg = np.median(veg)
+        mean_veg = np.mean(veg)
+        med_vari = np.median(vari)
+        mean_vari = np.mean(vari)
+
+        cover = self.coverage(ex_g)
+        aniso_direction, aniso = self.anisotropy(ex_g)
+        entro = self.entropy(ex_g)
+        # ex_g[ex_g > 1] = 1
+        corr, diss = self.glcm_entropy(ex_g)
+
+        return (med_g, mean_g, med_ex_g, mean_ex_g, med_ex_r, mean_ex_r, med_veg, mean_veg, med_vari, mean_vari,
+                cover, aniso_direction, aniso, entro, corr, diss)
+
 
     def convert_coords(self, coords, start_shape, target_shape):
         (x, y, w, h, a) = coords
@@ -541,7 +573,6 @@ class Pipeline(Thread):
         ### Transition to using Hough lines
         mask = out_img_bw
         hough_bw = np.zeros((self.img_h, self.img_w))
-        # edges = cv2.Canny(out_img,50,150,aperture_size=3)
         lines = cv2.HoughLines(mask.astype("uint8"), 0.1, np.pi / 90, 700)
         counts = 0
         for line in lines:
@@ -569,8 +600,6 @@ class Pipeline(Thread):
         cv2.imwrite(os.path.join(self.output_dir,'houghlines_bw.png'), hough_bw)
 
         # Separate the Hough lines into horizontal and vertical lines
-
-        # I want to combine the nearby lines rather than just making them thicker.
         hor = []
         ver = []
 
@@ -610,7 +639,7 @@ class Pipeline(Thread):
 
         output = cv2.bitwise_and(cutout,cutout,mask=hough_bw)
         cv2.imwrite(os.path.join(self.output_dir,"cutout.png"),output)
-        mask = hough_bw
+        # mask = hough_bw
 
         # Extract plots
         # I was using hard-coded values to see about how big the area of each plot is
@@ -673,27 +702,24 @@ class Pipeline(Thread):
 
             grid_col += 1
 
-
         self.csv_data = []
-        # coord_img = img.copy()
-        # print(coord_img.shape)
         for plot in plots_with_grids:
             (r, c, x, y, w, h, a) = plot
-            # (x, y, w, h, a) = self.convert_coords((x, y, w, h, a), img.shape[:2], hmap.shape[:2])  # Uncomment when using hmap
-            # coord_img = self.print_coords_on_img(coord_img, r, c, x, y, w, h)
 
             plot_img = self.img[y:y + h, x:x + w]
             plot_img = self.remove_edge_effects(plot_img)
-            veg_i, aniso, cover, green, entro = self.get_data(plot_img)
+            (med_g, mean_g, med_ex_g, mean_ex_g, med_ex_r, mean_ex_r, med_veg, mean_veg, med_vari, mean_vari, cover, aniso_direction, aniso, entro, corr, diss) = self.get_data(plot_img)
 
             if self.hmap_path is None:
-                self.csv_data.append((r, c, veg_i, aniso, cover, green, entro))
+                self.csv_data.append((r, c, med_g, mean_g, med_ex_g, mean_ex_g, med_ex_r, mean_ex_r, med_veg, mean_veg,
+                                      med_vari, mean_vari, cover, aniso_direction, aniso, entro, corr, diss))
 
             else:
                 (x,y,w,h,a) = self.convert_coords((x,y,w,h,a),self.img.shape[:2],self.hmap.shape[:2])
                 hplot = self.remove_edge_effects(self.hmap[y:y+h,x:x+w])
                 height = self.get_height(hplot)
-                self.csv_data.append((r,c,veg_i, aniso, cover, green, entro, height))
+                self.csv_data.append((r, c, med_g, mean_g, med_ex_g, mean_ex_g, med_ex_r, mean_ex_r, med_veg, mean_veg,
+                                      med_vari, mean_vari, cover, aniso_direction, aniso, entro, corr, diss, height))
 
         with open("data.csv", 'w') as csvfile:
             data_w = csv.writer(csvfile)
@@ -706,12 +732,15 @@ class Pipeline(Thread):
             # Relative height - after further work we can attempt to give an absolute value
             if self.hmap_path is None:
                 data_w.writerow(
-                    ['Row IDX', 'Column IDX', 'Veg. Greenness IDX', 'Canopy Orientation', 'Coverage', 'Greenness Reading',
-                    'Canopy Structure'])
+                    ['Row IDX', 'Column IDX', 'Median Greenness', 'Mean Greenness', 'Median Ex_Green', 'Mean Ex_Green',
+                     'Median Ex_Red', 'Mean Ex_Red', 'Median Veg IDX', 'Mean Veg IDX', 'Median VARI', 'Mean VARI',
+                     'Canopy Coverage', 'Anisotropy Orientation', 'Anisotropy Score', 'Shannon Entropy',
+                     'GLCM Correlation', 'GLCM Dissimilarity'])
             else:
-                data_w.writerow(
-                    ['Row IDX', 'Column IDX', 'Veg. Greenness IDX', 'Canopy Orientation', 'Coverage', 'Greenness Reading',
-                    'Canopy Structure', 'Relative Height'])
+                data_w.writerow(['Row IDX','Column IDX','Median Greenness','Mean Greenness','Median Ex_Green','Mean Ex_Green',
+                                 'Median Ex_Red','Mean Ex_Red','Median Veg IDX','Mean Veg IDX','Median VARI','Mean VARI',
+                                 'Canopy Coverage','Anisotropy Orientation','Anisotropy Score','Shannon Entropy',
+                                 'GLCM Correlation','GLCM Dissimilarity','Relative Height'])
             for row in self.csv_data:
                 string = []
                 for item in row:
@@ -721,85 +750,278 @@ class Pipeline(Thread):
                         string.append("N/A")
                 data_w.writerow(string)
 
+    def dir_is_date(self, dir):
+        if re.search('[a-z]',dir) is None:
+            return True
+        else:
+            return False
 
+    def get_imgs_from_dates(self):
+        dir_structure = os.walk(self.parent_dir)
+        for info in dir_structure:
+            dirs = info[1]
+            break
 
+        self.date_dirs = []
+        for dir in dirs:
+            if self.dir_is_date(dir) is True:
+                self.date_dirs.append(dir)
+        self.date_dirs.sort()
+
+        self.orthos = []
+        self.heightmaps = []
+        self.overviews = []
+
+        for date in self.date_dirs:
+            dir_structure = os.walk(os.path.join(self.parent_dir, date))
+            for info in dir_structure:
+                overview = False
+                height = False
+                ortho = False
+                for img in info[2]:
+                    if re.search('[Oo]verview', img) is not None and not overview:
+                        self.overviews.append(os.path.join(self.parent_dir, date, img))
+                        overview = True
+                    elif re.search('[Hh]eight', img) is not None and not height:
+                        self.heightmaps.append(os.path.join(self.parent_dir, date, img))
+                        height = True
+                    elif re.search('[Ss]mall', img) is not None and not ortho:
+                        self.orthos.append(os.path.join(self.parent_dir, date, img))
+                        ortho = True
+
+                if overview is False:
+                    self.overviews.append(None)
+                if height is False:
+                    self.heightmaps.append(None)
+                if ortho is False:
+                    self.orthos.append(None)
+
+        # for i in range(len(self.orthos)):
+        #     print(self.orthos[i])
+        #     print(self.heightmaps[i])
+        #     print(self.overviews[i])
 
         pass
 
-    # Run the pipeline for the analysis
-    def run_pipeline(self, output_dir, parent_dir=None, seg_path=None, img_path=None, hmap_path=None):
-        if parent_dir is None and img_path is None:
-            print("Either a parent directory or image path is required, but neither was given")
-            exit(1)
+    # Extract data for a single date while in the series analysis
+    def get_data_series_single(self, i):
+        ortho = None
+        overview = None
+        heightmap = None
+        csv_data_single = []
+        if self.orthos[i] is not None:
+            ortho = cv2.imread(self.orthos[i])
+        if self.overviews[i] is not None:
+            overview = cv2.imread(self.overviews[i])
+        if self.heightmaps[i] is not None:
+            heightmap = cv2.imread(self.overviews[i])
 
-        if parent_dir is not None and seg_path is None:
-            print("A parent directory is given, but no date for the segmentation was supplied")
-            exit(2)
-    # def run(self):
-        # Save or load model
+        # There isn't a proper set of data for this date
+        if ortho is None and overview is None:
+            return None
 
-        #model.save("models/soil/model_5.h5")
-        self.model = load_model("../model_5.h5")
-        # Info about model
-        #model.summary()
+        if ortho is not None:
+            img_h,img_w = ortho.shape[:2]
+            head,tail = os.path.split(self.orthos[i])
+            date = os.path.basename(head)
+            # print(date)
 
-        self.img_path = img_path
-        self.hmap_path = hmap_path
-        self.output_dir = output_dir
-        self.parent_dir = parent_dir
+            for plot in self.plot_coords_grids:
+                (r, c, orig_x, orig_y, orig_w, orig_h, orig_a) = plot
+                (x,y,w,h,a) = self.convert_coords((orig_x,orig_y,orig_w,orig_h,orig_a),(self.seg_h,self.seg_w),(img_h,img_w))
 
-        if self.img_path is not None:
-            self.single_img_analysis()
-            print("single img analysis")
-            exit(0)
+                plot_img = ortho[y:y + h, x:x + w]
+                plot_img = self.remove_edge_effects(plot_img)
+                med_g, mean_g, med_ex_g, mean_ex_g, med_ex_r, mean_ex_r, med_veg, mean_veg, med_vari, mean_vari, cover, aniso_direction, aniso, entro, corr, diss = self.get_data(plot_img)
 
-        # If one is passed, load the heightmap
-        self.hmap = None
+                if heightmap is not None:
+                    (x,y,w,h,a) = self.convert_coords((orig_x,orig_y,orig_w,orig_h,orig_a),(self.seg_h,self.seg_w),heightmap.shape[:2])
+                    hplot = self.remove_edge_effects(heightmap[y:y+h,x:x+w])
+                    height = self.get_height(hplot)
+                    csv_data_single.append((r, c, med_g, mean_g, med_ex_g, mean_ex_g, med_ex_r, mean_ex_r, med_veg, mean_veg,
+                                    med_vari, mean_vari, cover, aniso_direction, aniso, entro, corr, diss, height))
 
-        if self.hmap_path is not None:
-            self.hmap = cv2.imread(self.hmap_path)
-
-
-
-        img = cv2.imread(self.img_path)
-
-
-        if img.shape[2] > 3:
-            img = img[:,:,:3]
-
-        img_h, img_w = img.shape[:2]
-
-        hmap_h = 0
-        hmap_w = 0
-
-        if self.hmap is not None:
-            hmap_h, hmap_w = self.hmap.shape[:2]
+                else:
+                    csv_data_single.append((r, c, med_g, mean_g, med_ex_g, mean_ex_g, med_ex_r, mean_ex_r, med_veg, mean_veg,
+                                    med_vari, mean_vari, cover, aniso_direction, aniso, entro, corr, diss))
 
 
-        (images, labels, x_values, y_values) = self.get_small_imgs_from_mosaic(img)
 
-        print(len(images))
+            csv_file = os.path.join(self.csv_date_path, date)
+            csv_file = csv_file + ".csv"
 
-        # Run the model on the small images extracted from the original
-        outputs = self.model.predict(images)#,verbose=1) # Remove verbose mode because it doesn't work properly in pycharm
+            with open(csv_file, 'w') as csvfile:
+                data_w = csv.writer(csvfile)
+                if heightmap is None:
+                    data_w.writerow(
+                        ['Row IDX', 'Column IDX', 'Median Greenness', 'Mean Greenness', 'Median Ex_Green', 'Mean Ex_Green',
+                         'Median Ex_Red', 'Mean Ex_Red', 'Median Veg IDX', 'Mean Veg IDX', 'Median VARI', 'Mean VARI',
+                         'Canopy Coverage', 'Anisotropy Orientation', 'Anisotropy Score', 'Shannon Entropy',
+                         'GLCM Correlation', 'GLCM Dissimilarity', 'Relative Height'])
+                else:
+                    data_w.writerow(['Row IDX','Column IDX','Median Greenness','Mean Greenness','Median Ex_Green','Mean Ex_Green',
+                                     'Median Ex_Red','Mean Ex_Red','Median Veg IDX','Mean Veg IDX','Median VARI','Mean VARI',
+                                     'Canopy Coverage','Anisotropy Orientation','Anisotropy Score','Shannon Entropy',
+                                     'GLCM Correlation','GLCM Dissimilarity','Relative Height'])
+                for row in csv_data_single:
+                    string = []
+                    for item in row:
+                        if item is not None:
+                            string.append("%.3f" % item if not float(item).is_integer() else item)
+                        else:
+                            string.append("N/A")
+                    data_w.writerow(string)
 
-        # Draws the areas classified as soil with >98% confidence on
-        # the original image as well as a black and white mask and
-        # saves them to disk
-        h, w = img.shape[:2]
+    # Use pandas to transform the data into more useable values
+    def perform_data_transformation(self):
+        dir_structure = os.walk(self.csv_date_path)
+        for info in dir_structure:
+            files = info[2]
+            break
+
+        csvs = []
+        dates = []
+
+        files.sort()
+
+        for file in files:
+            if file.startswith("."):
+                continue
+            # print(file)
+            csvs.append(pd.read_csv(os.path.join(self.csv_date_path,file)))
+            dates.append(file.split(".")[0])
+        # print(dates)
+
+        # print(len(csvs))
+        # print(csvs[0].columns)
+        cols = csvs[0].columns
+        # for c in cols:
+        #     print(c)
+        # print(cols)
+        traits = []
+        for c in cols:
+            if c == 'Row IDX' or c == 'Column IDX':
+                continue
+            else:
+                traits.append(c)
+        # print(traits)
+        date = csvs[0].iloc[:, 0:2]
+        date = pd.concat([date, csvs[0].iloc[:, 3]], axis=1)
+        # print(date)
+
+        date_base = csvs[0].iloc[:, 0:2]
+        # dates = ['19_04_16','19_04_30','19_05_14','19_05_29','19_06_05']
+        # dates = ['18_12_13', '19_01_08', '19_01_22', '19_02_06', '19_02_20',
+        #          '19_03_18', '19_04_04', '19_04_16', '19_04_30', '19_05_14',
+        #          '19_05_29', '19_06_05', '19_06_12'
+        #          ]
+        count = 0
+        trait_csvs = []
+        col_names = ['Row IDX', 'Column IDX']
+        # print(len(csvs))
+        for t in range(len(traits)):
+            t_csv = date_base.copy()
+            for i in range(len(dates)):
+                # print(i)
+                t_csv = pd.concat([t_csv, csvs[i].iloc[:, t + 2]], axis=1)
+                if t == 0:
+                    col_names.append(dates[i])
+
+            # t_csv.columns = ['Row IDX','Column IDX',dates[0],dates[1],dates[2],dates[3],dates[4]]
+            # print(col_names)
+            t_csv.columns = col_names
+            # for i in range(len(dates)):
+            # count += 1
+            # print(dates[i])
+            # print(t_csv.columns[i+2])
+            # t_csv.rename(columns = {t_csv.columns[i+2]: dates}, inplace=True)
+            # break
+            trait_csvs.append(t_csv)
+        print(count)
+
+        for sheet in trait_csvs:
+            # print(sheet)
+            pass
+
+        print(len(trait_csvs))
+        print(len(traits))
+
+        trait_csv_path = os.path.join(self.csv_path, "trait_csvs")
+        rel_trait_path = os.path.join(self.csv_path, "relative_trait_csvs")
+        if not os.path.exists(trait_csv_path):
+            os.mkdir(trait_csv_path)
+        if not os.path.exists(rel_trait_path):
+            os.mkdir(rel_trait_path)
+
+
+        for i in range(len(trait_csvs)):
+            trait_csvs[i].to_csv(path_or_buf=os.path.join(trait_csv_path,traits[i] + ".csv"),
+                                 index=False, float_format='%.3f')
+
+        rel_trait_csvs = []
+        for csv in trait_csvs:
+            csv_copy = csv.copy()
+            for c in range(14, 2, -1):
+                # print(c)
+                csv_copy.iloc[:, c] = csv_copy.iloc[:, c] - csv_copy.iloc[:, c - 1]
+            csv_copy.iloc[:, 2] = 0
+            # print(csv_copy)
+            rel_trait_csvs.append(csv_copy)
+            # print(csv_copy)
+            # print(csv)
+            # for i in range(1,len(dates)):
+            #   csv_copy
+            # break
+
+        for i in range(len(rel_trait_csvs)):
+            rel_trait_csvs[i].to_csv(
+                path_or_buf=os.path.join(rel_trait_path,traits[i] + ".csv"),
+                index=False, float_format='%.3f')
+
+    # Perform series analysis for many dates
+    def series_analysis(self):
+        self.get_imgs_from_dates()
+
+        # print(os.path.basename(self.seg_path))
+        dir_structure = os.walk(self.seg_path)
+        for info in dir_structure:
+            files = info[2]
+            break
+
+        self.seg_img = None
+
+        for file in files:
+            if re.search('[Ss]mall', file) is not None:
+                self.seg_img = cv2.imread(os.path.join(self.seg_path,file))
+                # print(self.seg_img.shape)
+                # print(file)
+
+        if self.seg_img is None:
+            exit(4)
+
+        if self.seg_img.shape[2] > 3:
+            self.seg_img = self.seg_img[:,:,:3]
+
+        self.seg_h, self.seg_w = self.seg_img.shape[:2]
+
+        (images, labels, x_values, y_values) = self.get_small_imgs_from_mosaic(self.seg_img)
+
+        print("Beginning segmentation")
+
+        self.outputs = self.model.predict(images)
+
         size = 9
-        out_img = img.copy()
-        out_img_bw = np.zeros((h, w))
+        out_img = self.seg_img.copy()
+        out_img_bw = np.zeros((self.seg_h, self.seg_w))
 
-        for i in range(len(outputs)):
-            if outputs[i][1] >= 0.98:
+        for i in range(len(self.outputs)):
+            if self.outputs[i][1] >= 0.98:
                 x = x_values[i]
                 y = y_values[i]
                 cv2.rectangle(out_img, (x + 1, y + 1), (x + size - 1, y + size - 1), (0, 0, 255), -1)
                 cv2.rectangle(out_img_bw, (x + 1, y + 1), (x + size - 1, y + size - 1), 255, -1)
 
         cv2.imwrite("output.png", out_img)
-
         out_img_bw = out_img_bw * 255
         out_img_bw.astype("uint8")
         cv2.imwrite("output_bw.png", out_img_bw)
@@ -807,14 +1029,14 @@ class Pipeline(Thread):
         # Draw all the Hough Lines on the image.
         # Save a black and white mask, and the original
         # with lines drawn on it.
-        out = img.copy()
+        out = self.seg_img.copy()
         # cv2.imwrite("test.png",out)
         ### Transition to using Hough lines
         # out_img_bw = cv2.imread("output_bw.png")
         mask = out_img_bw
-        hough_bw = np.zeros((h, w))
+        hough_bw = np.zeros((self.seg_h, self.seg_w))
         # edges = cv2.Canny(out_img,50,150,aperture_size=3)
-        lines = cv2.HoughLines(mask.astype("uint8"), 0.1, np.pi / 90, 700)
+        lines = cv2.HoughLines(mask.astype("uint8"), 0.1, np.pi / 90, 1000) # TODO: Add dynamic line length for Hough lines
         counts = 0
         for line in lines:
             if line[0][1] > 0.01 and line[0][1] < 1.55:
@@ -836,7 +1058,7 @@ class Pipeline(Thread):
                 counts += 1
 
         hough_bw = np.bitwise_not(hough_bw.astype("uint8"))
-        print(counts)
+        # print(counts)
 
         cv2.imwrite('houghlines.png', out)
         cv2.imwrite('houghlines_bw.png', hough_bw)
@@ -868,28 +1090,25 @@ class Pipeline(Thread):
             ver_cons = ver
             ver = self.line_consensus(ver)
 
-        # ver_eq = vert_equalize(ver_cons)
-        # Making the horizontal distances equal is not as accurate, because the plots are not all perfectly the same size.
-
         # Write out various images using different sets of lines.
-        mask = self.mask_write((h, w), ver_cons, hor_cons, "test0.png")
+        mask = self.mask_write((self.seg_h, self.seg_w), ver_cons, hor_cons, "test0.png")
         mask = np.bitwise_not(mask.astype("uint8"))
-        cv2.imwrite("mask2.png", mask)
-        self.mask_write((h, w), ver2, hor2, "test2.png")
+        # cv2.imwrite("mask2.png", mask)
+        # self.mask_write((self.seg_h, self.seg_w), ver2, hor2, "test2.png")
 
-        cutout = img.copy()
-        output = cv2.bitwise_and(cutout, cutout, mask=mask)
-        print(cutout.shape)
-        cv2.imwrite("test3.png", output)
+        # cutout = self.seg_img.copy()
+        # output = cv2.bitwise_and(cutout, cutout, mask=mask)
+        # print(cutout.shape)
+        # cv2.imwrite("test3.png", output)
 
         # Write an image that should only include the areas that are in plots, but will also include small plots.
-        cutout = img.copy()
+        cutout = self.seg_img.copy()
 
-        output = cv2.bitwise_and(cutout,cutout,mask=hough_bw)
-        print(cutout.shape)
-        print(hough_bw.shape)
-        cv2.imwrite("cutout.png",output)
-        mask = hough_bw
+        # output = cv2.bitwise_and(cutout,cutout,mask=hough_bw)
+        # print(cutout.shape)
+        # print(hough_bw.shape)
+        # cv2.imwrite("cutout.png",output)
+        # mask = hough_bw
 
         # Extract plots
         # I was using hard-coded values to see about how big the area of each plot is
@@ -919,170 +1138,437 @@ class Pipeline(Thread):
 
             hist.append(count)
 
-        plot2 = [plot for plot in plots if plot[4] > 10000]  # ~5000 for 20mb imgs, 35000 for the 300mb ones
-        print(len(plot2))
+        self.plot_coords = [plot for plot in plots if plot[4] > 20000]  # ~5000 for 20mb imgs, 35000 for the 300mb ones
+        # print(len(self.plot_coords))
 
-        plot2 = [plot for plot in plot2 if plot[4] < 80000]
-        print(len(plot2))
+        self.plot_coords = [plot for plot in self.plot_coords if plot[4] < 80000]
+        # print(len(self.plot_coords))
 
         # Create images that are the final mask, as well as the original image
         # with all the non-plot regions removed.
         final_mask = np.zeros(hough_bw.shape)
-        for plot in plot2:
+        for plot in self.plot_coords:
             final_mask[plot[1]:plot[1]+plot[3],plot[0]:plot[0]+plot[2]] = 1
 
         plots_img = cv2.bitwise_and(cutout,cutout,mask=final_mask.astype("uint8"))
 
         cv2.imwrite("plots.png",plots_img)
-        # cv2.imwrite("final_mask.png",final_mask)
 
-        # Check to see if I can overlay plots on heightmap
-        # plot is (x,y,w,h,a)
+        self.plot_coords_grids = []
 
-        hmap_plots = []
-
-        if self.hmap is not None:
-
-            hmap_mask = np.zeros((hmap_h, hmap_w))
-            for plot in plot2:
-                (x, y, w, h, a) = plot
-                x = float(x) / float(img_w)
-                x = int(x * hmap_w)
-                y = float(y) / float(img_h)
-                y = int(y * hmap_h)
-                w = float(w) / float(img_w)
-                w = int(w * hmap_w)
-                h = float(h) / float(img_h)
-                h = int(h * hmap_h)
-                a = w * h
-                hmap_mask[y:y + h, x:x + w] = 1
-                hmap_plots.append((x, y, w, h, a))
-
-            hmap_final = cv2.bitwise_and(self.hmap, self.hmap, mask=hmap_mask.astype("uint8"))
-            cv2.imwrite("heightmap_plots.png", hmap_final)
-
-        # Save each plot image in a folder, with the row and column
-        # information in its filename.
-        # TODO: This will be changed to saving each plot in a unique
-        # folder, and then saving images from different days together.
-
-        dir_name = "dfw_18_07_09"
-        # dir_name = "rres_18_05_15"
-        if not os.path.exists(dir_name):
-            os.mkdir(dir_name)
-
-        if plot2[0][0] > plot2[-1][0]:
-            plot2 = list(reversed(plot2))
+        if self.plot_coords[0][0] > self.plot_coords[-1][0]:
+            self.plot_coords = list(reversed(self.plot_coords))
 
         grid_row = 1
         grid_col = 1
-        raw_y = plot2[0][1]
-        plots_with_grids = []
+        raw_y = self.plot_coords[0][1]
 
-        for plot in plot2:
+        for plot in self.plot_coords:
             if plot[1] != raw_y:
                 grid_row += 1
                 grid_col = 1
                 raw_y = plot[1]
-            name = dir_name + "/" + str(grid_row) + "_" + str(grid_col) + ".png"
-            cv2.imwrite(name, plots_img[plot[1]:plot[1] + plot[3], plot[0]:plot[0] + plot[2]])
-            plots_with_grids.append((grid_row, grid_col, plot[0], plot[1], plot[2], plot[3], plot[4]))
+            #name = dir_name + "/" + str(grid_row) + "_" + str(grid_col) + ".png"
+            #cv2.imwrite(name, plots_img[plot[1]:plot[1] + plot[3], plot[0]:plot[0] + plot[2]])
+            self.plot_coords_grids.append((grid_row, grid_col, plot[0], plot[1], plot[2], plot[3], plot[4]))
 
             grid_col += 1
 
-        # This is a clone of the above cell but with hmap_plots instead. Should refactor into
-        # a function that takes the plots as an argument
 
-        # dir_name = "../2016_plots_data/08_02"
+        print("Finished with segmentation, beginning data extraction")
+
+        self.csv_path = os.path.join(self.parent_dir, "csv_data")
+        self.csv_date_path = os.path.join(self.csv_path, "date_csvs")
+        if not os.path.exists(self.csv_path):
+            os.mkdir(self.csv_path)
+        if not os.path.exists(self.csv_date_path):
+            os.mkdir(self.csv_date_path)
+
+        for i in range(len(self.orthos)):
+            self.get_data_series_single(i)
+
+
+
+
+
+        # for date in date_dirs:
+
+            # continue
+
+
+    # Run the pipeline for the analysis
+    def run_pipeline(self, output_dir, parent_dir=None, seg_path=None, img_path=None, hmap_path=None):
+        if parent_dir is None and img_path is None:
+            print("Either a parent directory or image path is required, but neither was given")
+            exit(1)
+
+        if parent_dir is not None and seg_path is None:
+            print("A parent directory is given, but no date for the segmentation was supplied")
+            exit(2)
+
+        if parent_dir is not None and img_path is not None:
+            print("A parent directory and single image are given. Choose only one depending on whether you want to analyze a series or individual image")
+            exit(3)
+
+    # def run(self):
+        # Save or load model
+
+        #model.save("models/soil/model_5.h5")
+        self.model = load_model("../model_5.h5")
+        # Info about model
+        #model.summary()
+
+        self.img_path = img_path
+        self.hmap_path = hmap_path
+        self.output_dir = output_dir
+        self.parent_dir = parent_dir
+        self.seg_path = seg_path
+
+        # self.csv_path = os.path.join(self.parent_dir, "csv_data")
+        # self.perform_data_transformation()
+        # exit(0)
+
+        if self.img_path is not None:
+            self.single_img_analysis()
+            print("single img analysis")
+            # exit(0)
+
+        if self.parent_dir is not None:
+            self.series_analysis()
+            print("series analysis")
+            self.perform_data_transformation()
+            # exit(0)
+
+        # # If one is passed, load the heightmap
+        # self.hmap = None
+        #
+        # if self.hmap_path is not None:
+        #     self.hmap = cv2.imread(self.hmap_path)
+        #
+        #
+        #
+        # img = cv2.imread(self.img_path)
+        #
+        #
+        # if img.shape[2] > 3:
+        #     img = img[:,:,:3]
+        #
+        # img_h, img_w = img.shape[:2]
+        #
+        # hmap_h = 0
+        # hmap_w = 0
+        #
+        # if self.hmap is not None:
+        #     hmap_h, hmap_w = self.hmap.shape[:2]
+        #
+        #
+        # (images, labels, x_values, y_values) = self.get_small_imgs_from_mosaic(img)
+        #
+        # print(len(images))
+        #
+        # # Run the model on the small images extracted from the original
+        # outputs = self.model.predict(images)#,verbose=1) # Remove verbose mode because it doesn't work properly in pycharm
+        #
+        # # Draws the areas classified as soil with >98% confidence on
+        # # the original image as well as a black and white mask and
+        # # saves them to disk
+        # h, w = img.shape[:2]
+        # size = 9
+        # out_img = img.copy()
+        # out_img_bw = np.zeros((h, w))
+        #
+        # for i in range(len(outputs)):
+        #     if outputs[i][1] >= 0.98:
+        #         x = x_values[i]
+        #         y = y_values[i]
+        #         cv2.rectangle(out_img, (x + 1, y + 1), (x + size - 1, y + size - 1), (0, 0, 255), -1)
+        #         cv2.rectangle(out_img_bw, (x + 1, y + 1), (x + size - 1, y + size - 1), 255, -1)
+        #
+        # cv2.imwrite("output.png", out_img)
+        #
+        # out_img_bw = out_img_bw * 255
+        # out_img_bw.astype("uint8")
+        # cv2.imwrite("output_bw.png", out_img_bw)
+        #
+        # # Draw all the Hough Lines on the image.
+        # # Save a black and white mask, and the original
+        # # with lines drawn on it.
+        # out = img.copy()
+        # # cv2.imwrite("test.png",out)
+        # ### Transition to using Hough lines
+        # # out_img_bw = cv2.imread("output_bw.png")
+        # mask = out_img_bw
+        # hough_bw = np.zeros((h, w))
+        # # edges = cv2.Canny(out_img,50,150,aperture_size=3)
+        # lines = cv2.HoughLines(mask.astype("uint8"), 0.1, np.pi / 90, 700)
+        # counts = 0
+        # for line in lines:
+        #     if line[0][1] > 0.01 and line[0][1] < 1.55:
+        #         continue
+        #     if line[0][1] > 1.58:
+        #         continue
+        #     for rho, theta in line:
+        #         a = np.cos(theta)
+        #         b = np.sin(theta)
+        #         x0 = a * rho
+        #         y0 = b * rho
+        #         x1 = int(x0 + 10000 * (-b))
+        #         y1 = int(y0 + 10000 * a)
+        #         x2 = int(x0 - 10000 * (-b))
+        #         y2 = int(y0 - 10000 * a)
+        #
+        #         cv2.line(out, (x1, y1), (x2, y2), (0, 0, 255), 1)
+        #         cv2.line(hough_bw, (x1, y1), (x2, y2), 255, 1)
+        #         counts += 1
+        #
+        # hough_bw = np.bitwise_not(hough_bw.astype("uint8"))
+        # print(counts)
+        #
+        # cv2.imwrite('houghlines.png', out)
+        # cv2.imwrite('houghlines_bw.png', hough_bw)
+        #
+        # # Separate the Hough lines into horizontal and vertical lines
+        #
+        # # I want to combine the nearby lines rather than just making them thicker.
+        # hor = []
+        # ver = []
+        #
+        # for line in lines:
+        #     if line[0][1] < 0.01:
+        #         ver.append(line[0, 0])
+        #     elif line[0][1] > 1.55 and line[0][1] < 1.58:
+        #         hor.append(line[0, 0])
+        #
+        # hor.sort()
+        # ver.sort()
+        # ver2 = ver
+        # hor2 = hor
+        # hor_cons = []
+        # ver_cons = []
+        #
+        # while len(hor_cons) != len(hor):
+        #     hor_cons = hor
+        #     hor = self.line_consensus(hor)
+        #
+        # while len(ver_cons) != len(ver):
+        #     ver_cons = ver
+        #     ver = self.line_consensus(ver)
+        #
+        # # ver_eq = vert_equalize(ver_cons)
+        # # Making the horizontal distances equal is not as accurate, because the plots are not all perfectly the same size.
+        #
+        # # Write out various images using different sets of lines.
+        # mask = self.mask_write((h, w), ver_cons, hor_cons, "test0.png")
+        # mask = np.bitwise_not(mask.astype("uint8"))
+        # cv2.imwrite("mask2.png", mask)
+        # self.mask_write((h, w), ver2, hor2, "test2.png")
+        #
+        # cutout = img.copy()
+        # output = cv2.bitwise_and(cutout, cutout, mask=mask)
+        # print(cutout.shape)
+        # cv2.imwrite("test3.png", output)
+        #
+        # # Write an image that should only include the areas that are in plots, but will also include small plots.
+        # cutout = img.copy()
+        #
+        # output = cv2.bitwise_and(cutout,cutout,mask=hough_bw)
+        # print(cutout.shape)
+        # print(hough_bw.shape)
+        # cv2.imwrite("cutout.png",output)
+        # mask = hough_bw
+        #
+        # # Extract plots
+        # # I was using hard-coded values to see about how big the area of each plot is
+        # # but it should be detected automatically, using the numbers of rows
+        # # and columns.
+        # plots = []
+        #
+        # im2, contours, hierarchy = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        #
+        # for contour in contours:
+        #     x, y, width, height = cv2.boundingRect(contour)
+        #     area = width * height
+        #     plots.append((x, y, width, height, area))
+        #
+        # areas = []
+        # for plot in plots:
+        #     areas.append(plot[4])
+        #
+        # area_set = list(set(areas))
+        # hist = []
+        #
+        # for i in area_set:
+        #     count = 0
+        #     for area in areas:
+        #         if area == i:
+        #             count += 1
+        #
+        #     hist.append(count)
+        #
+        # plot2 = [plot for plot in plots if plot[4] > 10000]  # ~5000 for 20mb imgs, 35000 for the 300mb ones
+        # print(len(plot2))
+        #
+        # plot2 = [plot for plot in plot2 if plot[4] < 80000]
+        # print(len(plot2))
+        #
+        # # Create images that are the final mask, as well as the original image
+        # # with all the non-plot regions removed.
+        # final_mask = np.zeros(hough_bw.shape)
+        # for plot in plot2:
+        #     final_mask[plot[1]:plot[1]+plot[3],plot[0]:plot[0]+plot[2]] = 1
+        #
+        # plots_img = cv2.bitwise_and(cutout,cutout,mask=final_mask.astype("uint8"))
+        #
+        # cv2.imwrite("plots.png",plots_img)
+        # # cv2.imwrite("final_mask.png",final_mask)
+        #
+        # # Check to see if I can overlay plots on heightmap
+        # # plot is (x,y,w,h,a)
+        #
+        # hmap_plots = []
+        #
+        # if self.hmap is not None:
+        #
+        #     hmap_mask = np.zeros((hmap_h, hmap_w))
+        #     for plot in plot2:
+        #         (x, y, w, h, a) = plot
+        #         x = float(x) / float(img_w)
+        #         x = int(x * hmap_w)
+        #         y = float(y) / float(img_h)
+        #         y = int(y * hmap_h)
+        #         w = float(w) / float(img_w)
+        #         w = int(w * hmap_w)
+        #         h = float(h) / float(img_h)
+        #         h = int(h * hmap_h)
+        #         a = w * h
+        #         hmap_mask[y:y + h, x:x + w] = 1
+        #         hmap_plots.append((x, y, w, h, a))
+        #
+        #     hmap_final = cv2.bitwise_and(self.hmap, self.hmap, mask=hmap_mask.astype("uint8"))
+        #     cv2.imwrite("heightmap_plots.png", hmap_final)
+        #
+        # # Save each plot image in a folder, with the row and column
+        # # information in its filename.
+        # # TODO: This will be changed to saving each plot in a unique
+        # # folder, and then saving images from different days together.
+        #
+        # dir_name = "dfw_18_07_09"
+        # # dir_name = "rres_18_05_15"
         # if not os.path.exists(dir_name):
-        #    os.mkdir(dir_name)
-
-        if self.hmap is not None:
-            if hmap_plots[0][0] > hmap_plots[-1][0]:
-                hmap_plots = list(reversed(hmap_plots))
-
-                if len(hmap_plots) > 1000:
-                    print("this is way too long for one, there must be an error")
-
-
-            grid_row = 1
-            grid_col = 1
-            raw_y = hmap_plots[0][1]
-            plots_with_grids = []
-
-            for plot in hmap_plots:
-                if plot[1] != raw_y:
-                    grid_row += 1
-                    grid_col = 1
-                    raw_y = plot[1]
-                name = dir_name + "/" + str(grid_row) + "_" + str(grid_col) + ".png"
-                cv2.imwrite(name, hmap_final[plot[1]:plot[1] + plot[3], plot[0]:plot[0] + plot[2]])
-                plots_with_grids.append((grid_row, grid_col, plot[0], plot[1], plot[2], plot[3], plot[4]))
-
-                grid_col += 1
-
-        csv_data = []
-        coord_img = img.copy()
-        print(coord_img.shape)
-        for plot in plots_with_grids:
-            (r, c, x, y, w, h, a) = plot
-            # (x, y, w, h, a) = self.convert_coords((x, y, w, h, a), img.shape[:2], hmap.shape[:2])  # Uncomment when using hmap
-            coord_img = self.print_coords_on_img(coord_img, r, c, x, y, w, h)
-
-            plot_img = img[y:y + h, x:x + w]
-            plot_img = self.remove_edge_effects(plot_img)
-            veg_i, aniso, cover, green, entro = self.get_data(plot_img)
-
-            # (r,c,x,y,w,h,a) = plot
-            # (x,y,w,h,a) = convert_coords((x,y,w,h,a),img.shape[:2],hmap.shape[:2])
-            # hplot = remove_edge_effects(hmap[y:y+h,x:x+w])
-            # height = get_height(hplot)
-
-            # For initial good img
-            # csv_data.append((r,c,veg_i, aniso, cover, green, entro, height))
-            # For image with grid overlaid
-            csv_data.append((r, c, veg_i, aniso, cover, green, entro))
-            # For heatmap with grid overlaid
-            # csv_data.append((r,c,height))
-
-        print(len(csv_data))
-        # cv2.imwrite("index.png",coord_img)
-        # pickle_name = "180515rres.pickle"
-        # pickle.dump(plot2,open(pickle_name,'wb'))
-
-        plot0 = plots_with_grids[21]
-        (r, c, x, y, w, h, a) = plot0
-        #(x, y, w, h, a) = self.convert_coords((x, y, w, h, a), img.shape[:2], hmap.shape[:2])
-        # hplot = self.remove_edge_effects(hmap[y:y + h, x:x + w])
-        # height = self.get_height(hplot)
-        # cv2.imwrite("test_plot.png", hmap[y:y + h, x:x + w])
-        # print(height)
-        # with open('test.csv','w') as csvfile:
-        #    data_w = csv.writer(csvfile)
-        #    for row in hplot:
-        #        data_w.writerow(row)
-
-        # dir_name = "dfw_18_07_23"
-        dir_name = "dfw_18_07_09_h"
-        with open(dir_name + ".csv", 'w') as csvfile:
-            data_w = csv.writer(csvfile)
-            # Row IDX - row
-            # Column IDX - column
-            # Veg Greenness IDX - vegetative index
-            # Canopy Orientation - Isotropy (high numbers indicates likely lodging)
-            # Canopy Structure - Shannon Entropy score
-            # Greenness Reading - Median value of green channel
-            # Relative height - after further work we can attempt to give an absolute value
-            data_w.writerow(
-                ['Row IDX', 'Column IDX', 'Veg. Greenness IDX', 'Canopy Orientation', 'Coverage', 'Greenness Reading',
-                 'Canopy Structure', 'Relative Height'])
-            for row in csv_data:
-                string = []
-                for item in row:
-                    if item is not None:
-                        string.append("%.3f" % item if not float(item).is_integer() else item)
-                    else:
-                        string.append("N/A")
-                data_w.writerow(string)
+        #     os.mkdir(dir_name)
+        #
+        # if plot2[0][0] > plot2[-1][0]:
+        #     plot2 = list(reversed(plot2))
+        #
+        # grid_row = 1
+        # grid_col = 1
+        # raw_y = plot2[0][1]
+        # plots_with_grids = []
+        #
+        # for plot in plot2:
+        #     if plot[1] != raw_y:
+        #         grid_row += 1
+        #         grid_col = 1
+        #         raw_y = plot[1]
+        #     name = dir_name + "/" + str(grid_row) + "_" + str(grid_col) + ".png"
+        #     cv2.imwrite(name, plots_img[plot[1]:plot[1] + plot[3], plot[0]:plot[0] + plot[2]])
+        #     plots_with_grids.append((grid_row, grid_col, plot[0], plot[1], plot[2], plot[3], plot[4]))
+        #
+        #     grid_col += 1
+        #
+        # # This is a clone of the above cell but with hmap_plots instead. Should refactor into
+        # # a function that takes the plots as an argument
+        #
+        # # dir_name = "../2016_plots_data/08_02"
+        # # if not os.path.exists(dir_name):
+        # #    os.mkdir(dir_name)
+        #
+        # if self.hmap is not None:
+        #     if hmap_plots[0][0] > hmap_plots[-1][0]:
+        #         hmap_plots = list(reversed(hmap_plots))
+        #
+        #         if len(hmap_plots) > 1000:
+        #             print("this is way too long for one, there must be an error")
+        #
+        #
+        #     grid_row = 1
+        #     grid_col = 1
+        #     raw_y = hmap_plots[0][1]
+        #     plots_with_grids = []
+        #
+        #     for plot in hmap_plots:
+        #         if plot[1] != raw_y:
+        #             grid_row += 1
+        #             grid_col = 1
+        #             raw_y = plot[1]
+        #         name = dir_name + "/" + str(grid_row) + "_" + str(grid_col) + ".png"
+        #         cv2.imwrite(name, hmap_final[plot[1]:plot[1] + plot[3], plot[0]:plot[0] + plot[2]])
+        #         plots_with_grids.append((grid_row, grid_col, plot[0], plot[1], plot[2], plot[3], plot[4]))
+        #
+        #         grid_col += 1
+        #
+        # csv_data = []
+        # coord_img = img.copy()
+        # print(coord_img.shape)
+        # for plot in plots_with_grids:
+        #     (r, c, x, y, w, h, a) = plot
+        #     # (x, y, w, h, a) = self.convert_coords((x, y, w, h, a), img.shape[:2], hmap.shape[:2])  # Uncomment when using hmap
+        #     coord_img = self.print_coords_on_img(coord_img, r, c, x, y, w, h)
+        #
+        #     plot_img = img[y:y + h, x:x + w]
+        #     plot_img = self.remove_edge_effects(plot_img)
+        #     veg_i, aniso, cover, green, entro = self.get_data(plot_img)
+        #
+        #     # (r,c,x,y,w,h,a) = plot
+        #     # (x,y,w,h,a) = convert_coords((x,y,w,h,a),img.shape[:2],hmap.shape[:2])
+        #     # hplot = remove_edge_effects(hmap[y:y+h,x:x+w])
+        #     # height = get_height(hplot)
+        #
+        #     # For initial good img
+        #     # csv_data.append((r,c,veg_i, aniso, cover, green, entro, height))
+        #     # For image with grid overlaid
+        #     csv_data.append((r, c, veg_i, aniso, cover, green, entro))
+        #     # For heatmap with grid overlaid
+        #     # csv_data.append((r,c,height))
+        #
+        # print(len(csv_data))
+        # # cv2.imwrite("index.png",coord_img)
+        # # pickle_name = "180515rres.pickle"
+        # # pickle.dump(plot2,open(pickle_name,'wb'))
+        #
+        # plot0 = plots_with_grids[21]
+        # (r, c, x, y, w, h, a) = plot0
+        # #(x, y, w, h, a) = self.convert_coords((x, y, w, h, a), img.shape[:2], hmap.shape[:2])
+        # # hplot = self.remove_edge_effects(hmap[y:y + h, x:x + w])
+        # # height = self.get_height(hplot)
+        # # cv2.imwrite("test_plot.png", hmap[y:y + h, x:x + w])
+        # # print(height)
+        # # with open('test.csv','w') as csvfile:
+        # #    data_w = csv.writer(csvfile)
+        # #    for row in hplot:
+        # #        data_w.writerow(row)
+        #
+        # # dir_name = "dfw_18_07_23"
+        # dir_name = "dfw_18_07_09_h"
+        # with open(dir_name + ".csv", 'w') as csvfile:
+        #     data_w = csv.writer(csvfile)
+        #     # Row IDX - row
+        #     # Column IDX - column
+        #     # Veg Greenness IDX - vegetative index
+        #     # Canopy Orientation - Isotropy (high numbers indicates likely lodging)
+        #     # Canopy Structure - Shannon Entropy score
+        #     # Greenness Reading - Median value of green channel
+        #     # Relative height - after further work we can attempt to give an absolute value
+        #     data_w.writerow(
+        #         ['Row IDX', 'Column IDX', 'Veg. Greenness IDX', 'Canopy Orientation', 'Coverage', 'Greenness Reading',
+        #          'Canopy Structure', 'Relative Height'])
+        #     for row in csv_data:
+        #         string = []
+        #         for item in row:
+        #             if item is not None:
+        #                 string.append("%.3f" % item if not float(item).is_integer() else item)
+        #             else:
+        #                 string.append("N/A")
+        #         data_w.writerow(string)
 
 
