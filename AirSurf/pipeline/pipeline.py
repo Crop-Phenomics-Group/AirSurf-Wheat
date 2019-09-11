@@ -159,18 +159,14 @@ class Pipeline(Thread):
     def four_point_transform(self, image, pts):
         rect = self.order_points(pts)
         (tl, tr, br, bl) = rect
-        # print("4points")
-        # print(rect)
 
         widthA = np.sqrt(((br[0] - bl[0]) ** 2) + ((br[1] - bl[1]) ** 2))
         widthB = np.sqrt(((tr[0] - tl[0]) ** 2) + ((tr[1] - tl[1]) ** 2))
         maxWidth = max(int(widthA), int(widthB))
-        # print("maxW = " + str(maxWidth))
 
         heightA = np.sqrt(((tr[0] - br[0]) ** 2) + ((tr[1] - br[1]) ** 2))
         heightB = np.sqrt(((tl[0] - bl[0]) ** 2) + ((tl[1] - bl[1]) ** 2))
         maxHeight = max(int(heightA), int(heightB))
-        # print("maxH = " + str(maxHeight))
 
         dst = np.array([
             [0, 0],
@@ -178,14 +174,7 @@ class Pipeline(Thread):
             [maxHeight, maxWidth],
             [maxHeight, 0]
         ], dtype="float32")
-        # print(rect)
-        # print(dst)
         M = cv2.getPerspectiveTransform(rect, dst)
-        # print(M)
-        M = np.array([
-            [1.03645, 0.01255, -84.5],
-            [-0.01022, 1.11267, -136.5],
-            [-0.00, 0, 1]], dtype="float64")
         warped = cv2.warpPerspective(image, M, (maxWidth, maxHeight))  # ,flags=cv2.WARP_INVERSE_MAP)
 
         return warped
@@ -210,12 +199,6 @@ class Pipeline(Thread):
         cv2.imwrite("mask.png", mask)
 
         return dots
-        # print(dots)
-
-        # warped = four_point_transform(img,dots)
-
-        # cv2.imwrite("warped.png", warped)
-        # return warped
 
     # Combines lines that are too close together, ideally
     # resulting in only 1 line between plots.
@@ -377,24 +360,7 @@ class Pipeline(Thread):
         num_px = h * w
         num_px_nonzero = len(np.flatnonzero(binary_img))
 
-        # plt.imshow(binary_img, cmap='gray')
-        # plt.show()
-
         return float(num_px_nonzero) / float(num_px)
-
-        # h, w = img.shape[:2]
-        # lab_img = cv2.cvtColor(img, cv2.COLOR_RGB2LAB)
-        # luminance = lab_img[:, :, 0]
-        #
-        # mean_lum = np.mean(luminance)
-        # std_lum = np.std(luminance)
-        #
-        # _, binary = cv2.threshold(luminance, mean_lum - std_lum, 255, cv2.THRESH_BINARY)
-        #
-        # num_pixels = h * w
-        # num_pix_nonzero = len(np.flatnonzero(binary))
-        #
-        # return float(num_pix_nonzero) / float(num_pixels)
 
     # Return median greenness of a plot
     def green_median(self, img):
@@ -796,13 +762,6 @@ class Pipeline(Thread):
                 if ortho is False:
                     self.orthos.append(None)
 
-        # for i in range(len(self.orthos)):
-        #     print(self.orthos[i])
-        #     print(self.heightmaps[i])
-        #     print(self.overviews[i])
-
-        pass
-
     # Extract data for a single date while in the series analysis
     def get_data_series_single(self, i):
         ortho = None
@@ -846,7 +805,6 @@ class Pipeline(Thread):
                                     med_vari, mean_vari, cover, aniso_direction, aniso, entro, corr, diss))
 
 
-
             csv_file = os.path.join(self.csv_date_path, date)
             csv_file = csv_file + ".csv"
 
@@ -887,34 +845,20 @@ class Pipeline(Thread):
         for file in files:
             if file.startswith("."):
                 continue
-            # print(file)
             csvs.append(pd.read_csv(os.path.join(self.csv_date_path,file)))
             dates.append(file.split(".")[0])
-        # print(dates)
 
-        # print(len(csvs))
-        # print(csvs[0].columns)
         cols = csvs[0].columns
-        # for c in cols:
-        #     print(c)
-        # print(cols)
         traits = []
         for c in cols:
             if c == 'Row IDX' or c == 'Column IDX':
                 continue
             else:
                 traits.append(c)
-        # print(traits)
         date = csvs[0].iloc[:, 0:2]
         date = pd.concat([date, csvs[0].iloc[:, 3]], axis=1)
-        # print(date)
 
         date_base = csvs[0].iloc[:, 0:2]
-        # dates = ['19_04_16','19_04_30','19_05_14','19_05_29','19_06_05']
-        # dates = ['18_12_13', '19_01_08', '19_01_22', '19_02_06', '19_02_20',
-        #          '19_03_18', '19_04_04', '19_04_16', '19_04_30', '19_05_14',
-        #          '19_05_29', '19_06_05', '19_06_12'
-        #          ]
         count = 0
         trait_csvs = []
         col_names = ['Row IDX', 'Column IDX']
@@ -922,26 +866,13 @@ class Pipeline(Thread):
         for t in range(len(traits)):
             t_csv = date_base.copy()
             for i in range(len(dates)):
-                # print(i)
                 t_csv = pd.concat([t_csv, csvs[i].iloc[:, t + 2]], axis=1)
                 if t == 0:
                     col_names.append(dates[i])
 
-            # t_csv.columns = ['Row IDX','Column IDX',dates[0],dates[1],dates[2],dates[3],dates[4]]
-            # print(col_names)
             t_csv.columns = col_names
-            # for i in range(len(dates)):
-            # count += 1
-            # print(dates[i])
-            # print(t_csv.columns[i+2])
-            # t_csv.rename(columns = {t_csv.columns[i+2]: dates}, inplace=True)
-            # break
             trait_csvs.append(t_csv)
         print(count)
-
-        for sheet in trait_csvs:
-            # print(sheet)
-            pass
 
         print(len(trait_csvs))
         print(len(traits))
@@ -962,16 +893,9 @@ class Pipeline(Thread):
         for csv in trait_csvs:
             csv_copy = csv.copy()
             for c in range(14, 2, -1):
-                # print(c)
                 csv_copy.iloc[:, c] = csv_copy.iloc[:, c] - csv_copy.iloc[:, c - 1]
             csv_copy.iloc[:, 2] = 0
-            # print(csv_copy)
             rel_trait_csvs.append(csv_copy)
-            # print(csv_copy)
-            # print(csv)
-            # for i in range(1,len(dates)):
-            #   csv_copy
-            # break
 
         for i in range(len(rel_trait_csvs)):
             rel_trait_csvs[i].to_csv(
