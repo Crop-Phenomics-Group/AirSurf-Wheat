@@ -3,3 +3,7 @@
 *.pickle
 .DS_STORE
 *.pyc
+.idea/*
+figures.ipynb
+ground_truth_dfw/*
+.ipynb_checkpoints/*
