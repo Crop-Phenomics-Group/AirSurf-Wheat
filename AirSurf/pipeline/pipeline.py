@@ -689,13 +689,6 @@ class Pipeline(Thread):
 
         with open("data.csv", 'w') as csvfile:
             data_w = csv.writer(csvfile)
-            # Row IDX - row
-            # Column IDX - column
-            # Veg Greenness IDX - vegetative index
-            # Canopy Orientation - Isotropy (high numbers indicates likely lodging)
-            # Canopy Structure - Shannon Entropy score
-            # Greenness Reading - Median value of green channel
-            # Relative height - after further work we can attempt to give an absolute value
             if self.hmap_path is None:
                 data_w.writerow(
                     ['Row IDX', 'Column IDX', 'Median Greenness', 'Mean Greenness', 'Median Ex_Green', 'Mean Ex_Green',
@@ -862,7 +855,6 @@ class Pipeline(Thread):
         count = 0
         trait_csvs = []
         col_names = ['Row IDX', 'Column IDX']
-        # print(len(csvs))
         for t in range(len(traits)):
             t_csv = date_base.copy()
             for i in range(len(dates)):
@@ -906,7 +898,6 @@ class Pipeline(Thread):
     def series_analysis(self):
         self.get_imgs_from_dates()
 
-        # print(os.path.basename(self.seg_path))
         dir_structure = os.walk(self.seg_path)
         for info in dir_structure:
             files = info[2]
@@ -917,8 +908,6 @@ class Pipeline(Thread):
         for file in files:
             if re.search('[Ss]mall', file) is not None:
                 self.seg_img = cv2.imread(os.path.join(self.seg_path,file))
-                # print(self.seg_img.shape)
-                # print(file)
 
         if self.seg_img is None:
             exit(4)
@@ -959,7 +948,6 @@ class Pipeline(Thread):
         # out_img_bw = cv2.imread("output_bw.png")
         mask = out_img_bw
         hough_bw = np.zeros((self.seg_h, self.seg_w))
-        # edges = cv2.Canny(out_img,50,150,aperture_size=3)
         lines = cv2.HoughLines(mask.astype("uint8"), 0.1, np.pi / 90, 1000) # TODO: Add dynamic line length for Hough lines
         counts = 0
         for line in lines:
@@ -982,7 +970,6 @@ class Pipeline(Thread):
                 counts += 1
 
         hough_bw = np.bitwise_not(hough_bw.astype("uint8"))
-        # print(counts)
 
         cv2.imwrite('houghlines.png', out)
         cv2.imwrite('houghlines_bw.png', hough_bw)
