@@ -7,3 +7,5 @@
 figures.ipynb
 ground_truth_dfw/*
 .ipynb_checkpoints/*
+model_5.h5
+height.py

@@ -25,9 +25,6 @@ import os
 # import glob
 # import matplotlib.pyplot as plt
 
-# from sklearn.model_selection import train_test_split
-# from sklearn.preprocessing import LabelBinarizer
-# from sklearn.metrics import classification_report
 
 from skimage.measure import label, regionprops, shannon_entropy
 from skimage.feature import greycomatrix, greycoprops
@@ -280,6 +277,7 @@ class Pipeline(Thread):
             mat -= min_val
             mat /= float(width)
 
+    # Calculate the mean vegetative index
     def vegetative_index(self, img):
         h, w = img.shape[:2]
         if h == 0 and w == 0:
@@ -1131,7 +1129,7 @@ class Pipeline(Thread):
         # Save or load model
 
         #model.save("models/soil/model_5.h5")
-        self.model = load_model("../model_5.h5")
+        self.model = load_model("model/model_5.h5")
         # Info about model
         #model.summary()
 
