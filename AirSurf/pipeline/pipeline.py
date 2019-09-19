@@ -31,7 +31,6 @@ import os
 
 from skimage.measure import label, regionprops, shannon_entropy
 from skimage.feature import greycomatrix, greycoprops
-# import pickle
 
 
 # print(os.getcwd())
@@ -432,6 +431,7 @@ class Pipeline(Thread):
 
         return height
 
+    # Call the various data extraction methods and return it all in one tuple
     def get_data(self, img):
         f_img = img.astype(np.float64) / 255.0  # Normalize the image
         blue, green, red = cv2.split(f_img)
@@ -464,7 +464,7 @@ class Pipeline(Thread):
         return (med_g, mean_g, med_ex_g, mean_ex_g, med_ex_r, mean_ex_r, med_veg, mean_veg, med_vari, mean_vari,
                 cover, aniso_direction, aniso, entro, corr, diss)
 
-
+    # Convert coordinates between 2 differently-sized images/arrays so they appear in the same place
     def convert_coords(self, coords, start_shape, target_shape):
         (x, y, w, h, a) = coords
 
@@ -480,12 +480,14 @@ class Pipeline(Thread):
 
         return x, y, w, h, a
 
+    # Overlay the plot row and column over the image for manual verification of each plot
     def print_coords_on_img(self, img,r,c,x,y,w,h):
         font = cv2.FONT_HERSHEY_SIMPLEX
         string = str(r) + ":" + str(c)
         cv2.putText(img,string,(int(x+w/3),int(y+h/2)), font,1, (0,0,255),2,cv2.LINE_AA)
         return img
 
+    # Perform some initial path maintenance
     def setup(self, img_path, output_dir, hmap_path=None):
         self.img_path = img_path
         self.output_dir = output_dir
@@ -709,12 +711,16 @@ class Pipeline(Thread):
                         string.append("N/A")
                 data_w.writerow(string)
 
+    # Return true if the directory has no letters, which assumes then that
+    # it is a date and valid directory of images
     def dir_is_date(self, dir):
         if re.search('[a-z]',dir) is None:
             return True
         else:
             return False
 
+    # Search for and identify each relevant image in a subdirectory for
+    # orthomosaic, heightmap and overhead images
     def get_imgs_from_dates(self):
         dir_structure = os.walk(self.parent_dir)
         for info in dir_structure:
@@ -823,7 +829,8 @@ class Pipeline(Thread):
                             string.append("N/A")
                     data_w.writerow(string)
 
-    # Use pandas to transform the data into more useable values
+    # Use pandas to transform the data into more useable values, allowing traits to be
+    # tracked across the whole season
     def perform_data_transformation(self):
         dir_structure = os.walk(self.csv_date_path)
         for info in dir_structure:
@@ -1105,7 +1112,6 @@ class Pipeline(Thread):
         # for date in date_dirs:
 
             # continue
-
 
     # Run the pipeline for the analysis
     def run_pipeline(self, output_dir, parent_dir=None, seg_path=None, img_path=None, hmap_path=None):
