@@ -464,7 +464,7 @@ class Pipeline(Thread):
         return x, y, w, h, a
 
     # Overlay the plot row and column over the image for manual verification of each plot
-    def print_coords_on_img(self, img,r,c,x,y,w,h):
+    def print_coords_on_img(self, img, r, c, x, y, w, h):
         font = cv2.FONT_HERSHEY_SIMPLEX
         string = str(r) + ":" + str(c)
         cv2.putText(img,string,(int(x+w/3),int(y+h/2)), font,1, (0,0,255),2,cv2.LINE_AA)
@@ -943,6 +943,7 @@ class Pipeline(Thread):
         # TODO: with the same parameters.
         counts = 0
         for line in lines:
+            # 0 and pi/2 represent horizontal and vertical lines, so skip anything that isn't one of these two
             if line[0][1] > 0.01 and line[0][1] < 1.55:
                 continue
             if line[0][1] > 1.58:
@@ -1090,14 +1091,6 @@ class Pipeline(Thread):
         for i in range(len(self.orthos)):
             self.get_data_series_single(i)
 
-
-
-
-
-        # for date in date_dirs:
-
-            # continue
-
     # Run the pipeline for the analysis
     def run_pipeline(self, output_dir, parent_dir=None, seg_path=None, img_path=None, hmap_path=None):
         if parent_dir is None and img_path is None:
@@ -1112,13 +1105,7 @@ class Pipeline(Thread):
             print("A parent directory and single image are given. Choose only one depending on whether you want to analyze a series or individual image")
             exit(3)
 
-    # def run(self):
-        # Save or load model
-
-        #model.save("models/soil/model_5.h5")
         self.model = load_model("model/model_5.h5")
-        # Info about model
-        #model.summary()
 
         self.img_path = img_path
         self.hmap_path = hmap_path
