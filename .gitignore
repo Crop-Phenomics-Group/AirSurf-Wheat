@@ -1,0 +1,14 @@
+*.png
+*.csv
+*.pickle
+.DS_STORE
+*.pyc
+.idea/*
+figures.ipynb
+ground_truth_dfw/*
+.ipynb_checkpoints/*
+model_5.h5
+height.py
+AirSurf/.idea/*
+AirSurf/interface/*.pyc
+AirSurf/pipeline/__pycache__/*
